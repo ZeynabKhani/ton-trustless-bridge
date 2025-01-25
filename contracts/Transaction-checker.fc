@@ -1,0 +1,72 @@
+#include "imports/stdlib.fc";
+
+const op::check_transaction = 0x91d555f7;
+const op::transaction_checked = 0x756adff1;
+const error::unknown_opcode = 0xffff;
+
+(int) load_data() inline_ref {
+    slice ds = get_data().begin_parse();
+    return (
+        ds~load_uint(1)
+    );
+}
+
+() save_data(int is_active) impure {
+    set_data(
+        begin_cell()
+            .store_uint(is_active, 1)
+            .end_cell()
+    );
+}
+
+(int) create_key_block() impure inline {
+    ;; todo: create a new key block contract with (block_code, lite_client_address, block_height)
+}
+
+() send_message_to_key_block() impure inline {
+    ;; todo
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) {
+        return ();
+    }
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) {        
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+
+    int op = in_msg_body~load_uint(32);
+
+    (int is_active) = load_data();
+
+    if (op == op::check_transaction) {
+        cell transaction = in_msg_body~load_ref(); ;; can be a pruned branch cell
+        cell proof = in_msg_body~load_ref(); ;; the format is at participant discretion
+        cell current_block = in_msg_body~load_ref(); ;; the format is at participant discretion, should contain proof for itself
+
+        ;; todo
+        ;; todo: check proofs to confirm that a given transaction was committed in some masterchain block of the current epoch.
+
+        var transaction_checked_msg_body = begin_cell()
+                        .store_ref(op::transaction_checked, 32)
+                        .store_ref(transaction)
+                        .end_cell();
+        var msg = begin_cell()
+                .store_uint(0x18, 6)
+                .store_slice(sender_address)
+                .store_coins(0)
+                .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(transaction_checked_msg_body);
+        send_raw_message(msg, 64);
+
+        return ();
+    }
+
+    ;; todo: Transaction-checker may also interact with Lite-client to check the validity of a given block.
+
+    throw(error::unknown_opcode);
+}

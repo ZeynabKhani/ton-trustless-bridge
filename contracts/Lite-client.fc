@@ -1,0 +1,125 @@
+#include "imports/stdlib.fc";
+
+const op::new_key_block = 0x11a78ffe;
+const op::check_block = 0x8eaa9d76;
+const op::ok = 0xff8ff4e1;
+const op::correct = 0xce02b807;
+const error::unknown_opcode = 0xffff;
+
+cell config_param(int x) asm "CONFIGOPTPARAM";
+int check_signature(int hash, slice signature, int public_key) asm "CHKSIGNU";
+int now() asm "NOW";
+
+(int) load_data() inline_ref {
+    slice ds = get_data().begin_parse();
+    return (
+        ds~load_uint(1)
+    );
+}
+
+() save_data(int is_active) impure {
+    set_data(
+        begin_cell()
+            .store_uint(is_active, 1)
+            .end_cell()
+    );
+}
+
+(int) create_key_block() impure inline {
+    ;; todo: create a new key block contract with (block_code, lite_client_address, block_height)
+}
+
+() send_message_to_key_block() impure inline {
+    ;; todo
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) {
+        return ();
+    }
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) {        
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+
+    int op = in_msg_body~load_uint(32);
+
+    (int is_active) = load_data();
+
+    if (op == op::new_key_block) {
+        int query_id = in_msg_body~load_uint(64);
+        cell block = in_msg_body~load_ref();
+        cell signatures = in_msg_body~load_ref(); ;; the format is at participant discretion
+
+        ;; todo
+        ;; todo: block may have all unused branches pruned but must contain blockHeader and McBlockExtra(particularly ConfigParam34 with the list of current validators)
+
+        slice block_cs = block.begin_parse();
+        int global_id = block_cs~load_int(32);
+        cell info = block_cs~load_ref();
+        cell value_flow = block_cs~load_ref();
+        cell state_update = block_cs~load_ref();
+        cell extra = block_cs~load_ref();
+
+        ;; todo: check that the block corresponds to currently known epoch 
+        ;; todo: check that it is indeed a key_block
+        ;; todo: check that it has valid signatures
+        ;; todo: loads new epoch parameters (validators)
+        ;; todo: updates currently known epoch
+        ;; todo: If the block is invalid (or does not correspond to currently known epoch) it should be rejected.
+
+        ;; todo: should we create different contracts for blocks?
+        int block_hash = create__key_block();
+
+        var ok_msg_body = begin_cell()
+                        .store_uint(op::ok, 32)
+                        .store_uint(query_id, 64)
+                        .store_uint(block_hash, 256)
+                        .end_cell();
+        var msg = begin_cell()
+                .store_uint(0x18, 6)
+                .store_slice(sender_address)
+                .store_coins(0)
+                .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(ok_msg_body);
+        send_raw_message(msg, 64);
+
+        return ();
+    }
+
+    if (op == op::check_block) {
+        int query_id = in_msg_body~load_uint(64);
+        cell block = in_msg_body~load_ref();
+        cell signatures = in_msg_body~load_ref(); ;; the format is at participant discretion
+
+        ;; todo
+        ;; todo: may have all unused branches pruned
+
+        ;; todo: check that the block corresponds to currently known epoch and correctly signed
+        ;; todo: if not true, reject it
+
+        ;; todo: should we create different contracts for blocks?
+        int block_hash = create__key_block();
+        send_message_to_key_block();
+
+        var correct_msg_body = begin_cell()
+                        .store_uint(op::correct, 32)
+                        .store_uint(query_id, 64)
+                        .store_uint(block_hash, 256)
+                        .end_cell();
+        var msg = begin_cell()
+                .store_uint(0x18, 6)
+                .store_slice(sender_address)
+                .store_coins(0)
+                .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(correct_msg_body);
+        send_raw_message(msg, 64);
+
+        return ();
+    }
+
+    throw(error::unknown_opcode);
+}
