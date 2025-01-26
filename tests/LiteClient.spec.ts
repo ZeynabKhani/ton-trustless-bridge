@@ -3,12 +3,33 @@ import { Cell, toNano } from '@ton/core';
 import { LiteClient } from '../wrappers/LiteClient';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
+import * as fs from 'fs';
+import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
+import { liteServer_blockHeader } from 'ton-lite-client/dist/schema';
 
 describe('LiteClient', () => {
     let code: Cell;
+    let blockData: any;
+    let blockHeader: liteServer_blockHeader;
+    let block: liteServer_BlockData;
 
     beforeAll(async () => {
         code = await compile('LiteClient');
+        // Load the test data
+        const testDataRaw = fs.readFileSync(require.resolve('./block.json'), 'utf8');
+        blockData = JSON.parse(testDataRaw);
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
     });
 
     let blockchain: Blockchain;
@@ -18,7 +39,7 @@ describe('LiteClient', () => {
     beforeEach(async () => {
         blockchain = await Blockchain.create();
 
-        liteClient = blockchain.openContract(LiteClient.createFromConfig({}, code));
+        liteClient = blockchain.openContract(LiteClient.createFromConfig({ workchain: 0 }, code, 0));
 
         deployer = await blockchain.treasury('deployer');
 
@@ -33,7 +54,6 @@ describe('LiteClient', () => {
     });
 
     it('should deploy', async () => {
-        // the check is done inside beforeEach
-        // blockchain and liteClient are ready to use
+        await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block);
     });
 });

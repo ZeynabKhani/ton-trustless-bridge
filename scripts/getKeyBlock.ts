@@ -22,7 +22,7 @@ export function intToIP(int: number) {
 }
 export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlock> {
     const [rootCell] = await TonRocks.types.Cell.fromBoc(block.data);
-    // Additional check for rootHash
+    // Additional check for rootHash to validate the whole block and not just the block header
     const rootHash = Buffer.from(rootCell.hashes[0]).toString('hex');
     if (rootHash !== block.id.rootHash.toString('hex')) {
         throw Error('got wrong block or here was a wrong root_hash format');
@@ -36,7 +36,7 @@ async function verifyMasterchainBlock(
     blockId: tonNode_blockIdExt,
     validators: UserFriendlyValidator[],
 ) {
-    // This is like Additional check for rootHash in parseBlock
+    // Verifying the block header which is an exotic merkle proof cell with pruned branches
     const blockHeader = await liteClient.getBlockHeader(blockId);
     const blockHash = Cell.fromBoc(blockHeader.headerProof)[0].refs[0].hash(0);
     assert(blockHash.toString('hex') === blockHeader.id.rootHash.toString('hex'));
@@ -121,6 +121,15 @@ async function verifyMasterchainBlock(
             id: blockInfo,
         });
         parsedBlock = await parseBlock(block);
+        const testData = {
+            block: {
+                kind: block.kind,
+                id: block.id,
+                data: block.data,
+            },
+        };
+        fs.writeFileSync('tests/block.json', JSON.stringify(testData, null, 2));
+        console.log('Block data written to tests/block.json');
         if (!parsedBlock.info.key_block) {
             const keyBlockInfo = await client.getFullBlock(parsedBlock.info.prev_key_block_seqno);
             const matchingShard = keyBlockInfo.shards.find(
@@ -174,6 +183,22 @@ async function verifyMasterchainBlock(
             pubkey,
         });
     }
+
+    const blockHeader = await client.getBlockHeader(blockInfo);
+    const testData = {
+        header: {
+            id: blockHeader.id,
+            headerProof: blockHeader.headerProof,
+            mode: blockHeader.mode,
+        },
+    };
+    let existingData = {};
+    if (fs.existsSync('tests/block.json')) {
+        existingData = JSON.parse(fs.readFileSync('tests/block.json', 'utf8'));
+    }
+    const mergedData = { ...existingData, ...testData };
+    fs.writeFileSync('tests/block.json', JSON.stringify(mergedData, null, 2));
+    console.log('Block header written to tests/block.json');
 
     // We find the transaction that we want to verify given an account, verify its block and then verify the tx
     await sleep(2000);
