@@ -18,7 +18,7 @@ describe('LiteClient', () => {
     beforeAll(async () => {
         code = await compile('LiteClient');
         // Load the test data
-        const testDataRaw = fs.readFileSync(require.resolve('./block.json'), 'utf8');
+        const testDataRaw = fs.readFileSync(require.resolve('./block2.json'), 'utf8');
         blockData = JSON.parse(testDataRaw);
 
         blockHeader = {

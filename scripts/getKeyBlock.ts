@@ -209,7 +209,7 @@ async function verifyMasterchainBlock(
     fs.writeFileSync('tests/block.json', JSON.stringify(mergedData, null, 2));
     console.log('Block header written to tests/block.json');
 
-    await verifyMasterchainBlock(client, blockInfo, friendlyValidators);
+    // await verifyMasterchainBlock(client, blockInfo, friendlyValidators);
 
     // We find the transaction that we want to verify given an account, verify its block and then verify the tx
     await sleep(2000);
