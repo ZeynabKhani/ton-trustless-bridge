@@ -52,8 +52,17 @@ async function verifyMasterchainBlock(
             seqno: blockId.seqno,
         })) as any;
         const signatures = valSignatures.signatures as ValidatorSignature[];
-        // sort and get the largest top 100 validator weights
-        // this is because in TON, when validating a block, only at most 100 validators participated in a pool of 300+ validators
+        const signaturesData = {
+            signatures: signatures,
+        };
+        let existingData = {};
+        if (fs.existsSync('tests/block.json')) {
+            existingData = JSON.parse(fs.readFileSync('tests/block.json', 'utf8'));
+        }
+        const mergedData = { ...existingData, ...signaturesData };
+        fs.writeFileSync('tests/block.json', JSON.stringify(mergedData, null, 2));
+        console.log('Signatures written to tests/block.json');
+
         const sumLargestTotalWeights = validators
             .sort((a, b) => b.weight - a.weight)
             .slice(0, 100)
@@ -121,15 +130,6 @@ async function verifyMasterchainBlock(
             id: blockInfo,
         });
         parsedBlock = await parseBlock(block);
-        const testData = {
-            block: {
-                kind: block.kind,
-                id: block.id,
-                data: block.data,
-            },
-        };
-        fs.writeFileSync('tests/block.json', JSON.stringify(testData, null, 2));
-        console.log('Block data written to tests/block.json');
         if (!parsedBlock.info.key_block) {
             const keyBlockInfo = await client.getFullBlock(parsedBlock.info.prev_key_block_seqno);
             const matchingShard = keyBlockInfo.shards.find(
@@ -151,6 +151,15 @@ async function verifyMasterchainBlock(
             } else {
                 console.log('parsed key block seqno:', parsedBlock.info.seq_no);
                 // console.log('parsed block validator set:', validatorSet);
+                const testData = {
+                    block: {
+                        kind: block.kind,
+                        id: block.id,
+                        data: block.data,
+                    },
+                };
+                fs.writeFileSync('tests/block.json', JSON.stringify(testData, null, 2));
+                console.log('Block data written to tests/block.json');
             }
         } catch (error) {
             console.error('Error accessing block config:', error);
@@ -199,6 +208,8 @@ async function verifyMasterchainBlock(
     const mergedData = { ...existingData, ...testData };
     fs.writeFileSync('tests/block.json', JSON.stringify(mergedData, null, 2));
     console.log('Block header written to tests/block.json');
+
+    await verifyMasterchainBlock(client, blockInfo, friendlyValidators);
 
     // We find the transaction that we want to verify given an account, verify its block and then verify the tx
     await sleep(2000);

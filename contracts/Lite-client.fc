@@ -5,13 +5,14 @@ const op::check_block = 0x8eaa9d76;
 const op::ok = 0xff8ff4e1;
 const op::correct = 0xce02b807;
 const error::unknown_opcode = 0xffff;
+const error::unknown_param_type = 0xf100;
+const error::not_a_key_block = 0xf101;
+const error::block_does_not_correspond_to_current_epoch = 0xf102;
 
-cell config_param(int x) asm "CONFIGOPTPARAM";
-int check_signature(int hash, slice signature, int public_key) asm "CHKSIGNU";
-int now() asm "NOW";
 (slice, int) parse_exotic(cell x) asm "XCTOS";
-cell load_exotic(cell x) asm "XLOAD";
 int hash_at_level(cell x, int i) asm "CHASHIX";
+int slice_hash_2(builder b1, builder b2, int n) asm "HASHEXT_SHA256";
+int check_signature_for_slice(slice message, slice signature, int public_key) asm "CHKSIGNS";
 
 (int) load_data() inline_ref {
     slice ds = get_data().begin_parse();
@@ -28,13 +29,224 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
     );
 }
 
-;; (int) create_key_block() impure inline {
-;;     ;; todo: create a new key block contract with (block_code, lite_client_address, block_height)
-;; }
+(int, int, int, int, int, int) parse_block_id(slice block_id_cs) inline {
+    int block_id_kind = block_id_cs~load_int(32);
+    int block_id_workchain = block_id_cs~load_int(32);
+    int block_id_shard = block_id_cs~load_int(64);
+    int block_id_seqno = block_id_cs~load_int(32);
+    int block_id_root_hash = block_id_cs~load_uint(256);
+    int block_id_file_hash = block_id_cs~load_uint(256);
+    return (block_id_kind, block_id_workchain, block_id_shard, block_id_seqno, block_id_root_hash, block_id_file_hash);
+}
 
-;; () send_message_to_key_block() impure inline {
-;;     ;; todo
-;; }
+(slice, int) verify_block_header(slice block_header_cs) impure inline {
+    int block_header_kind = block_header_cs~load_int(32);
+    slice block_header_id_cs = block_header_cs~load_ref().begin_parse();
+    int block_header_mode = block_header_cs~load_uint(32);
+    cell header_proof = block_header_cs~load_ref();  
+
+    (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
+
+    ;; verifying the block header
+    ;; we should check that seqno in deserialized block matches to block seqno we know (in wrappers)
+    ;;then compute hash_1 of the only Merkle Proof reference and compare it to block hash we know (in wrappers and contract) -> assert h_proof.refs[0].get_hash(0) == block_id.root_hash
+    (slice header_proof_slice, int is_exotic) = parse_exotic(header_proof);
+    throw_unless(0xf001, is_exotic == -1);
+    throw_unless(0xf002, slice_bits(header_proof_slice) == 280);
+    throw_unless(0xf003, header_proof_slice~load_uint(8) == 3);
+
+    int root_hash = hash_at_level(header_proof_slice~load_ref(), 0);
+    throw_unless(0xf004, root_hash == header_proof_slice~load_uint(256));
+    throw_unless(0xf005, root_hash == block_header_id_root_hash);
+    ~strdump("header root hash is ok");
+    return (block_header_id_cs, root_hash);
+}
+
+(slice)  verify_block_data(slice block_data_cs, slice block_header_id_cs) impure inline {
+    int block_data_kind = block_data_cs~load_int(32);
+    slice block_data_id_cs = block_data_cs~load_ref().begin_parse();
+    cell block_data_c = block_data_cs~load_ref();
+
+    (int block_data_id_kind, int block_data_id_workchain, int block_data_id_shard, int block_data_id_seqno, int block_data_id_root_hash, int block_data_id_file_hash) = parse_block_id(block_data_id_cs);
+    
+    (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
+    throw_unless(0xf007, block_data_id_workchain == block_header_id_workchain);
+    throw_unless(0xf009, block_data_id_seqno == block_header_id_seqno);
+    throw_unless(0xf010, block_data_id_root_hash == block_header_id_root_hash);
+
+    int block_data_root_hash = hash_at_level(block_data_c, 0);
+    throw_unless(0xf011, block_data_root_hash == block_data_id_root_hash);
+    ;; todo: check the hash with the first cell
+    ~strdump("data root hash is ok");
+    return (block_data_c.begin_parse());
+}
+
+(int) load_and_check_block_info(slice info) impure inline {
+    int info_magic = info~load_uint(32);
+    throw_unless(0xf013, info_magic == 0x9bc7a987);
+    ~strdump("info magic is ok");  
+    
+    ;; int version = info~load_uint(32);
+    ;; int not_master = info~load_uint(1);
+    ;; int after_merge = info~load_uint(1);
+    ;; int before_split = info~load_uint(1);
+    ;; int after_split = info~load_uint(1);
+    ;; int want_split = info~load_uint(1);
+    ;; int want_merge = info~load_uint(1);
+    ;; int key_block = info~load_uint(1);
+    ;; int vert_seqno_incr = info~load_uint(1);
+    ;; int flags = info~load_uint(8);
+    ;; if (flags > 1) {
+    ;;     throw(0xf018);
+    ;; }
+    ;; int seq_no = info~load_uint(32);
+    ;; ~dump(seq_no);
+    ;; int vert_seq_no = info~load_uint(32);
+    ;; if (vert_seqno_incr > vert_seq_no) {
+    ;;     throw(0xf019);
+    ;; }
+    ;; int prev_seq_no = seq_no - 1;
+    ;; int shard_ident = info~load_uint(2);
+    ;; if (shard_ident != 0) {
+    ;;     throw(0xf020);
+    ;; }
+    ;; int shard_pfx_bits = info~load_uint(6);
+    ;; int shard_workchain = info~load_int(32);
+    ;; int shard_prefix = info~load_uint(64);
+    
+    info~load_uint(32 + 8 + 8 + 32 + 32);
+    info~load_uint(2 + 6 + 32 + 64);
+
+    int gen_utime = info~load_uint(32);
+    
+    ;; todo: check that the block corresponds to currently known epoch
+    ;; throw_unless(error::block_does_not_correspond_to_current_epoch, (utime_since < time_now) & (utime_until > time_now));
+    return (gen_utime);
+}
+
+(slice) load_and_check_block_data(slice block_data_cs) impure inline {
+    int data_magic = block_data_cs~load_uint(32);
+    throw_unless(0xf012, data_magic == 0x11ef55aa);
+    ~strdump("data magic is ok");
+
+    int global_id = block_data_cs~load_int(32);
+    slice info = block_data_cs~load_ref().begin_parse();
+    int gen_utime = load_and_check_block_info(info);
+    
+    slice value_flow = block_data_cs~load_ref().begin_parse();
+    slice state_update = block_data_cs~load_ref().begin_parse();
+
+    return (block_data_cs);
+}
+
+(slice) load_config_param_34(slice block_data_cs) impure inline {
+    throw_unless(error::not_a_key_block, slice_refs_empty?(block_data_cs) == 0);
+
+    slice extra = block_data_cs~load_ref().begin_parse();
+    extra~load_uint(32);
+    extra~load_ref();
+    extra~load_ref();
+    extra~load_ref();
+    extra~load_uint(256);   
+    extra~load_uint(256);
+
+    slice mc_block_extra = extra~load_ref().begin_parse();
+    mc_block_extra~load_uint(16);
+    int is_key_block = mc_block_extra~load_uint(1);
+    
+    mc_block_extra~load_ref();
+    mc_block_extra~load_ref();
+    mc_block_extra~load_ref();
+    cell config_params = begin_cell().end_cell();
+    if (is_key_block) {
+        config_params = mc_block_extra~load_dict();
+        (slice config_param_34, int success) = config_params.udict_get?(32, 34);
+        throw_unless(0xf014, success);
+        slice config_param_34_cs = config_param_34~load_ref().begin_parse();
+        return (config_param_34_cs);
+    }
+    ;; mc_block_extra~load_uint(75);
+    ;; int config_address = mc_block_extra~load_uint(256);
+    throw(error::not_a_key_block);
+    return (config_params.begin_parse());
+}
+
+(cell) load_validator_set(slice config_param_34) impure inline {
+    int param_type = config_param_34~load_uint(8);
+    int utime_since = config_param_34~load_uint(32);
+    int utime_until = config_param_34~load_uint(32);
+    int total = config_param_34~load_uint(16);
+    int main = config_param_34~load_uint(16);
+    throw_unless(0xf015, total >= main);
+    throw_unless(0xf015, main >= 1);
+
+    ;; todo: check that the block corresponds to currently known epoch
+    ;; int time_now = now();
+    ;; throw_unless(error::block_does_not_correspond_to_current_epoch, (utime_since < time_now) & (utime_until > time_now));
+
+    cell validator_set = begin_cell().end_cell();
+    if (param_type == 0x11) {
+        validator_set = config_param_34~load_dict();
+        return (validator_set);
+    }
+    if (param_type == 0x12) {
+        config_param_34~load_uint(64);
+        validator_set = config_param_34~load_dict();
+        return (validator_set);
+    }
+    throw(error::unknown_param_type);
+    return (validator_set);
+}
+
+(int, int, int) load_validator(slice validator) impure inline {
+    int validator_type = validator~load_uint(8);
+    throw_unless(0xf016, (validator_type == 0x53) | (validator_type == 0x73));
+    throw_unless(0xf016, validator~load_uint(32) == 0x8e81278a);
+    int pubkey = validator~load_uint(256);
+    int weight = validator~load_uint(64);
+    ;; if (validator_type == 0x73) {
+    ;;     int adnl_addr = validator~load_uint(256);
+    ;; }
+    return (validator_type, pubkey, weight);
+}
+
+(int) sum_validator_weights(cell validator_set) impure inline {
+    int sum = 0;
+    (int key, slice value, int success) = validator_set.udict_get_min?(16);
+    
+    while (success) {
+        (_, int pubkey, int weight) = load_validator(value);
+        sum += weight;
+        (key, value, success) = validator_set.udict_get_next?(16, key);
+    }
+    return (sum);
+}
+
+(int) get_validator_node_id(int pubkey) impure inline {
+    int node_id_prefix = 0xc6b41348;
+    int node_id = slice_hash_2(begin_cell().store_uint(node_id_prefix, 32).store_uint(pubkey, 256), begin_cell(), 2);
+    return (node_id);
+}
+
+(int) verify_signatures(cell validator_set, cell signatures, slice message) impure inline {
+    int total_weight = 0;
+    (int key, slice value, int success) = validator_set.udict_get_min?(16);
+    
+    while (success) {
+        (_, int pubkey, int weight) = load_validator(value);
+        int node_id = get_validator_node_id(pubkey);
+        (slice signature, int exists) = signatures.udict_get?(256, node_id);
+        if (exists) {
+            slice signature_cs = signature~load_ref().begin_parse();
+            int is_valid = check_signature_for_slice(message, signature_cs, pubkey);
+            if (is_valid) {
+                total_weight += weight;
+            }
+        }
+        (key, value, success) = validator_set.udict_get_next?(16, key);
+    }
+    return (total_weight);
+}
 
 () recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
     if (in_msg_body.slice_empty?()) {
@@ -56,62 +268,36 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
     ;; ~dump(slice_refs_empty?(first_ref_slice));
     ;; ~dump(slice_bits(first_ref_slice));
     ;; ~dump(slice_refs(first_ref_slice));
-    ;; cs~load_uint(n)
-    ;; cs~load_int(n)         
-    ;; cs~load_bits(n) 
 
     if (op == op::new_key_block) {
         int query_id = in_msg_body~load_uint(64);
         cell block = in_msg_body~load_ref();
-        ;; cell signatures = in_msg_body~load_ref(); ;; the format is at participant discretion
-
-        ;; todo: block may have all unused branches pruned but must contain blockHeader and McBlockExtra(particularly ConfigParam34 with the list of current validators)
-
-        ;; we should check that seqno in deserialized block matches to block seqno we know (in wrappers)
-        ;;then compute hash_1 of the only Merkle Proof reference and compare it to block hash we know (in wrappers and contract) -> assert h_proof.refs[0].get_hash(0) == block_id.root_hash
+        cell signatures = in_msg_body~load_dict();
 
         slice block_cs = block.begin_parse();
         slice block_header_cs = block_cs~load_ref().begin_parse();
         slice block_data_cs = block_cs~load_ref().begin_parse();
 
-        int block_header_kind = block_header_cs~load_int(32);
-        slice block_header_id_cs = block_header_cs~load_ref().begin_parse();
-        int block_header_mode = block_header_cs~load_uint(32);
-        cell merkle_proof = block_header_cs~load_ref();  
+        (slice block_header_id_cs, int root_hash) = verify_block_header(block_header_cs);
+        slice block_data = verify_block_data(block_data_cs, block_header_id_cs);
+        block_data = load_and_check_block_data(block_data);
+        slice config_param_34_cs = load_config_param_34(block_data);
+        cell validator_set = load_validator_set(config_param_34_cs);
+        int sum_total_weight = sum_validator_weights(validator_set);
 
-        int block_header_id_kind = block_header_id_cs~load_int(32);
-        int block_header_id_workchain = block_header_id_cs~load_int(32);
-        int block_header_id_shard = block_header_id_cs~load_int(64);
-        int block_header_id_seqno = block_header_id_cs~load_int(32);
-        int block_header_id_root_hash = block_header_id_cs~load_uint(256);
-        int block_header_id_file_hash = block_header_id_cs~load_uint(256);
+        (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
+        slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
 
-        ;; verifying the block header
-        (slice merkle_proof_slice, int is_exotic) = parse_exotic(merkle_proof);
-        throw_unless(0xf001, is_exotic == -1);
-        throw_unless(0xf002, slice_bits(merkle_proof_slice) == 280);
-        throw_unless(0xf003, merkle_proof_slice~load_uint(8) == 3);
+        int total_weight = verify_signatures(validator_set, signatures, message);
+        throw_unless(0xf017, total_weight > sum_total_weight * 2 / 3);
+        ~strdump("block is verified");
 
-        int root_hash = hash_at_level(merkle_proof_slice~load_ref(), 0);
-        throw_unless(0xf004, root_hash == merkle_proof_slice~load_uint(256));
-        throw_unless(0xf005, root_hash == block_header_id_root_hash);
-        ~strdump("root hash is ok");
-        
-        ;; int global_id = block_cs~load_int(32);
-        ;; cell info = block_cs~load_ref();
-        ;; cell value_flow = block_cs~load_ref();
-        ;; cell state_update = block_cs~load_ref();
-        ;; cell extra = block_cs~load_ref();
 
         ;; todo: check that the block corresponds to currently known epoch 
-        ;; todo: check that it is indeed a key_block
-        ;; todo: check that it has valid signatures
         ;; todo: loads new epoch parameters (validators)
         ;; todo: updates currently known epoch
         ;; todo: If the block is invalid (or does not correspond to currently known epoch) it should be rejected.
 
-        ;; todo: should we create different contracts for blocks?
-        ;; int block_hash = create__key_block();
 
         ;; var ok_msg_body = begin_cell()
         ;;                 .store_uint(op::ok, 32)
@@ -132,7 +318,7 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
     if (op == op::check_block) {
         int query_id = in_msg_body~load_uint(64);
         cell block = in_msg_body~load_ref();
-        cell signatures = in_msg_body~load_ref(); ;; the format is at participant discretion
+        cell signatures = in_msg_body~load_ref();
 
         ;; todo
         ;; todo: may have all unused branches pruned
@@ -140,9 +326,6 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
         ;; todo: check that the block corresponds to currently known epoch and correctly signed
         ;; todo: if not true, reject it
 
-        ;; todo: should we create different contracts for blocks?
-        ;; int block_hash = create__key_block();
-        ;; send_message_to_key_block();
 
         ;; var correct_msg_body = begin_cell()
         ;;                 .store_uint(op::correct, 32)

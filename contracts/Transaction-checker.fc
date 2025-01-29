@@ -19,6 +19,44 @@ const error::unknown_opcode = 0xffff;
     );
 }
 
+
+;; Example function demonstrating dictionary (hashmap) usage
+() example() inline {
+    ;; Create an empty dictionary
+    cell dict = new_dict();
+    ;; ~strdump("new_dict");
+    int c = 0;
+    
+    ;; Store values in dictionary (key length 256, value length 64)
+    dict~udict_set(256, 123, begin_cell().store_uint(999, 64).end_cell().begin_parse());
+    dict~udict_set(256, 456, begin_cell().store_uint(888, 64).end_cell().begin_parse());
+    
+    ;; Retrieve value from dictionary
+    (slice value, int success) = dict.udict_get?(256, 123);
+    if (success) {
+        int retrieved_value = value~load_uint(64);
+        ;; ~dump(retrieved_value);
+        ;; retrieved_value will be 999
+    }
+    
+    ;; Check if key exists
+    ;; int key_exists = dict.udict_has?(256, 123);
+    
+    ;; Delete key-value pair
+    dict~udict_delete?(256, 123);
+    
+    ;; Iterate through dictionary
+    ;; (int key, slice value, int found) = dict.udict_get_min?(256);
+    ;; while (found) {
+    ;;     int val = value~load_uint(64);
+    ;;     ;; Process value...
+    ;;     ~dump(val);
+    ;;     ;; Get next key-value pair
+    ;;     (key, value, found) = dict.udict_get_next?(256, key);
+    ;;     ~dump(found);
+    ;; }
+}
+
 (int) create_key_block() impure inline {
     ;; todo: create a new key block contract with (block_code, lite_client_address, block_height)
 }

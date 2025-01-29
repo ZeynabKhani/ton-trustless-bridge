@@ -6,12 +6,14 @@ import { compile } from '@ton/blueprint';
 import * as fs from 'fs';
 import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
 import { liteServer_blockHeader } from 'ton-lite-client/dist/schema';
+import { ValidatorSignature } from '@oraichain/tonbridge-utils';
 
 describe('LiteClient', () => {
     let code: Cell;
     let blockData: any;
     let blockHeader: liteServer_blockHeader;
     let block: liteServer_BlockData;
+    let signatures: ValidatorSignature[];
 
     beforeAll(async () => {
         code = await compile('LiteClient');
@@ -30,6 +32,8 @@ describe('LiteClient', () => {
             id: blockData.block.id,
             data: blockData.block.data,
         };
+
+        signatures = blockData.signatures;
     });
 
     let blockchain: Blockchain;
@@ -54,6 +58,6 @@ describe('LiteClient', () => {
     });
 
     it('should deploy', async () => {
-        await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block);
+        await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures);
     });
 });
