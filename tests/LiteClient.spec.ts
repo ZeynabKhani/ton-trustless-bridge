@@ -14,30 +14,29 @@ describe('LiteClient', () => {
     let blockData: any;
     let initialData: any;
     let blockHeader: liteServer_blockHeader;
-    let initialBlockHeader: liteServer_blockHeader;
     let block: liteServer_BlockData;
     let initialBlock: liteServer_BlockData;
     let signatures: ValidatorSignature[];
-    let initialSignatures: ValidatorSignature[];
 
     beforeAll(async () => {
         code = await compile('LiteClient');
+    });
+
+    let blockchain: Blockchain;
+    let deployer: SandboxContract<TreasuryContract>;
+    let liteClient: SandboxContract<LiteClient>;
+
+    beforeEach(async () => {
+        blockchain = await Blockchain.create();
 
         const initialDataRaw = fs.readFileSync(require.resolve('./keyblock1.json'), 'utf8');
         initialData = JSON.parse(initialDataRaw);
 
-        // initialBlockHeader = {
-        //     kind: initialData.header.kind,
-        //     id: initialData.header.id,
-        //     mode: initialData.header.mode,
-        //     headerProof: initialData.header.headerProof,
-        // };
         initialBlock = {
             kind: initialData.block.kind,
             id: initialData.block.id,
             data: initialData.block.data,
         };
-        // initialSignatures = initialData.signatures;
 
         const testDataRaw = fs.readFileSync(require.resolve('./keyblock2.json'), 'utf8');
         blockData = JSON.parse(testDataRaw);
@@ -54,14 +53,6 @@ describe('LiteClient', () => {
             data: blockData.block.data,
         };
         signatures = blockData.signatures;
-    });
-
-    let blockchain: Blockchain;
-    let deployer: SandboxContract<TreasuryContract>;
-    let liteClient: SandboxContract<LiteClient>;
-
-    beforeEach(async () => {
-        blockchain = await Blockchain.create();
 
         const { curValidatorSet, prevValidatorSet, nextValidatorSet, utime_since, utime_until } =
             LiteClient.getInitialDataConfig(initialBlock);
@@ -147,6 +138,40 @@ describe('LiteClient', () => {
             to: deployer.address,
             success: true,
             op: Op.ok,
+        });
+    });
+
+    it('should check a block', async () => {
+        let result = await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures);
+        expect(result.transactions).toHaveTransaction({
+            from: liteClient.address,
+            to: deployer.address,
+            success: true,
+            op: Op.ok,
+        });
+
+        let testDataRaw = fs.readFileSync(require.resolve('./keyblock3.json'), 'utf8');
+        blockData = JSON.parse(testDataRaw);
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = blockData.signatures;
+
+        result = await liteClient.sendCheckBlock(deployer.getSender(), blockHeader, block, signatures);
+        expect(result.transactions).toHaveTransaction({
+            from: liteClient.address,
+            to: deployer.address,
+            success: true,
+            op: Op.correct,
         });
     });
 });

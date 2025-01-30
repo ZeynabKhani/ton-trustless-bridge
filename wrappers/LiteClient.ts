@@ -403,4 +403,72 @@ export class LiteClient implements Contract {
             value: toNano('0.05'),
         });
     }
+
+    async sendCheckBlock(
+        provider: ContractProvider,
+        via: Sender,
+        blockHeader: liteServer_blockHeader,
+        block: liteServer_BlockData,
+        signatures: ValidatorSignature[],
+    ) {
+        const blockHeaderIdCell = beginCell()
+            .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
+            .storeInt(blockHeader.id.workchain, 32)
+            .storeInt(BigInt(blockHeader.id.shard), 64)
+            .storeInt(blockHeader.id.seqno, 32)
+            .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.rootHash).toString('hex')), 256)
+            .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.fileHash).toString('hex')), 256)
+            .endCell();
+        const blockHeaderCell = beginCell()
+            .storeInt(0x752d8219, 32) // kind: liteServer.blockHeader
+            .storeRef(blockHeaderIdCell) // id
+            .storeUint(blockHeader.mode, 32) // mode
+            .storeRef(Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0]) // header_proof
+            .endCell();
+
+        const blockDataIdCell = beginCell()
+            .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
+            .storeInt(block.id.workchain, 32)
+            .storeInt(BigInt(block.id.shard), 64)
+            .storeInt(block.id.seqno, 32)
+            .storeUint(BigInt('0x' + Buffer.from(block.id.rootHash).toString('hex')), 256)
+            .storeUint(BigInt('0x' + Buffer.from(block.id.fileHash).toString('hex')), 256)
+            .endCell();
+        const blockDataCell = beginCell()
+            .storeInt(0x6377cf0d, 32) // liteServer.getBlock
+            .storeRef(blockDataIdCell)
+            .storeRef(Cell.fromBoc(Buffer.from(block.data))[0])
+            .endCell();
+
+        // const message = Buffer.concat([
+        //     // magic prefix of message signing
+        //     Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
+        //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
+        //     Buffer.from(blockHeader.id.fileHash),
+        // ]);
+        // LiteClient.testBlockData(blockDataCell, signatures, message); // console.log('works for 27533522');
+
+        const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
+        let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
+        for (const item of signatures) {
+            const signature = Buffer.from(item.signature, 'base64').toString('hex');
+            const signaturePart1 = BigInt('0x' + signature.substring(0, 64));
+            const signaturePart2 = BigInt('0x' + signature.substring(64));
+            signaturesCell.set(
+                BigInt('0x' + Buffer.from(item.node_id_short, 'base64').toString('hex')),
+                beginCell().storeUint(signaturePart1, 256).storeUint(signaturePart2, 256).endCell(),
+            );
+        }
+
+        await provider.internal(via, {
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(Op.check_block, 32)
+                .storeUint(0, 64)
+                .storeRef(blockCell)
+                .storeDict(signaturesCell)
+                .endCell(),
+            value: toNano('0.05'),
+        });
+    }
 }

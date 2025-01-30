@@ -259,8 +259,8 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         }
         (key, value, success) = validator_set.udict_get_next?(16, key);
     }
-    throw_unless(0xf017, total_weight > sum_total_weight * 2 / 3);
     throw_unless(0xf017, total_weight > 0);
+    throw_unless(0xf018, total_weight > sum_total_weight * 2 / 3);
     ~strdump("block is verified");
     return ();
 }
@@ -280,7 +280,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         (cell new_next_validator_set, _, _) = load_validator_set(config_param_36_cs.begin_parse());
         (cell new_cur_validator_set, _, _) = load_validator_set(config_param_34_cs.begin_parse());
         throw_unless(0xf021, equal_slices_bits(new_cur_validator_set.begin_parse(), cur_validator_set.begin_parse()));
-        throw_unless(error::block_does_not_correspond_to_current_epoch, (utime_since < gen_utime) & (utime_until > gen_utime));
+        throw_unless(error::block_does_not_correspond_to_current_epoch, (utime_since < gen_utime) & (utime_until >= gen_utime));
         save_data(prev_validator_set, cur_validator_set, new_next_validator_set, utime_since, utime_until);
     }
     ~strdump("current epoch is updated");
@@ -353,22 +353,35 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         cell block = in_msg_body~load_ref();
         cell signatures = in_msg_body~load_ref();
 
+        slice block_cs = block.begin_parse();
+        slice block_header_cs = block_cs~load_ref().begin_parse();
+        slice block_data_cs = block_cs~load_ref().begin_parse();
 
-        ;; todo: check that the block corresponds to currently known epoch and correctly signed
-        ;; todo: if not true, reject it
+        (slice block_header_id_cs, int root_hash) = verify_block_header(block_header_cs);
 
-        ;; var correct_msg_body = begin_cell()
-        ;;                 .store_uint(op::correct, 32)
-        ;;                 .store_uint(query_id, 64)
-        ;;                 .store_uint(block_hash, 256)
-        ;;                 .end_cell();
-        ;; var msg = begin_cell()
-        ;;         .store_uint(0x18, 6)
-        ;;         .store_slice(sender_address)
-        ;;         .store_coins(0)
-        ;;         .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-        ;;         .store_ref(correct_msg_body);
-        ;; send_raw_message(msg, 64);
+        slice block_data = verify_block_data(block_data_cs, block_header_id_cs);
+
+        (block_data, int gen_utime) = load_block_data(block_data);
+
+        throw_unless(0xf022, (gen_utime >= utime_since) | (gen_utime < utime_until));
+
+        (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
+        slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
+
+        verify_signatures(cur_validator_set, signatures, message);
+        
+        var correct_msg_body = begin_cell()
+                        .store_uint(op::correct, 32)
+                        .store_uint(query_id, 64)
+                        .store_uint(root_hash, 256)
+                        .end_cell();
+        var msg = begin_cell()
+                .store_uint(0x18, 6)
+                .store_slice(sender_address)
+                .store_coins(0)
+                .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(correct_msg_body);
+        send_raw_message(msg.end_cell(), 64);
 
         return ();
     }
