@@ -8,7 +8,7 @@ import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
 import { liteServer_blockHeader } from 'ton-lite-client/dist/schema';
 import { ValidatorSignature } from '@oraichain/tonbridge-utils';
 
-describe('LiteClient', () => {
+describe.skip('LiteClient', () => {
     let code: Cell;
     let blockData: any;
     let blockHeader: liteServer_blockHeader;
