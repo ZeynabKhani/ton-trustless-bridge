@@ -14,17 +14,30 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
 int slice_hash_2(builder b1, builder b2, int n) asm "HASHEXT_SHA256";
 int check_signature_for_slice(slice message, slice signature, int public_key) asm "CHKSIGNS";
 
-(int) load_data() inline_ref {
+(cell, cell, cell, int, int) load_data() inline_ref {
     slice ds = get_data().begin_parse();
+    cell prev_validator_set = ds~load_dict();
+    cell cur_validator_set = ds~load_dict();
+    cell next_validator_set = ds~load_dict();
+    int utime_since = ds~load_uint(32);
+    int utime_until = ds~load_uint(32);
     return (
-        ds~load_uint(1)
+        prev_validator_set,
+        cur_validator_set,
+        next_validator_set,
+        utime_since,
+        utime_until
     );
 }
 
-() save_data(int is_active) impure {
+() save_data(cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until) impure {
     set_data(
         begin_cell()
-            .store_uint(is_active, 1)
+            .store_dict(prev_validator_set)
+            .store_dict(cur_validator_set)
+            .store_dict(next_validator_set)
+            .store_uint(utime_since, 32)
+            .store_uint(utime_until, 32)
             .end_cell()
     );
 }
@@ -81,7 +94,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
     return (block_data_c.begin_parse());
 }
 
-(int) load_and_check_block_info(slice info) impure inline {
+(int) load_block_info(slice info) impure inline {
     int info_magic = info~load_uint(32);
     throw_unless(0xf013, info_magic == 0x9bc7a987);
     ~strdump("info magic is ok");  
@@ -119,27 +132,25 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
     int gen_utime = info~load_uint(32);
     
-    ;; todo: check that the block corresponds to currently known epoch
-    ;; throw_unless(error::block_does_not_correspond_to_current_epoch, (utime_since < time_now) & (utime_until > time_now));
     return (gen_utime);
 }
 
-(slice) load_and_check_block_data(slice block_data_cs) impure inline {
+(slice, int) load_block_data(slice block_data_cs) impure inline {
     int data_magic = block_data_cs~load_uint(32);
     throw_unless(0xf012, data_magic == 0x11ef55aa);
     ~strdump("data magic is ok");
 
     int global_id = block_data_cs~load_int(32);
     slice info = block_data_cs~load_ref().begin_parse();
-    int gen_utime = load_and_check_block_info(info);
+    int gen_utime = load_block_info(info);
     
     slice value_flow = block_data_cs~load_ref().begin_parse();
     slice state_update = block_data_cs~load_ref().begin_parse();
 
-    return (block_data_cs);
+    return (block_data_cs, gen_utime);
 }
 
-(slice) load_config_param_34(slice block_data_cs) impure inline {
+(cell, cell, cell, int) load_config_params(slice block_data_cs) impure inline {
     throw_unless(error::not_a_key_block, slice_refs_empty?(block_data_cs) == 0);
 
     slice extra = block_data_cs~load_ref().begin_parse();
@@ -157,45 +168,48 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
     mc_block_extra~load_ref();
     mc_block_extra~load_ref();
     mc_block_extra~load_ref();
-    cell config_params = begin_cell().end_cell();
     if (is_key_block) {
-        config_params = mc_block_extra~load_dict();
+        cell config_params = mc_block_extra~load_dict();
+        (slice config_param_32, int success) = config_params.udict_get?(32, 32);
+        throw_unless(0xf014, success);
+        cell config_param_32_cs = config_param_32~load_ref();
         (slice config_param_34, int success) = config_params.udict_get?(32, 34);
         throw_unless(0xf014, success);
-        slice config_param_34_cs = config_param_34~load_ref().begin_parse();
-        return (config_param_34_cs);
+        cell config_param_34_cs = config_param_34~load_ref();
+        (slice config_param_36, int success) = config_params.udict_get?(32, 36);
+        cell config_param_36_cs = begin_cell().end_cell();
+        if (success) {
+            config_param_36_cs = config_param_36~load_ref();
+        }
+        return (config_param_32_cs, config_param_34_cs, config_param_36_cs, is_key_block);
     }
     ;; mc_block_extra~load_uint(75);
     ;; int config_address = mc_block_extra~load_uint(256);
-    throw(error::not_a_key_block);
-    return (config_params.begin_parse());
+    ;; not a key block
+    return (begin_cell().end_cell(), begin_cell().end_cell(), begin_cell().end_cell(), 0);
 }
 
-(cell) load_validator_set(slice config_param_34) impure inline {
-    int param_type = config_param_34~load_uint(8);
-    int utime_since = config_param_34~load_uint(32);
-    int utime_until = config_param_34~load_uint(32);
-    int total = config_param_34~load_uint(16);
-    int main = config_param_34~load_uint(16);
+(cell, int, int) load_validator_set(slice config_param) impure inline {
+    int param_type = config_param~load_uint(8);
+    int utime_since = config_param~load_uint(32);
+    int utime_until = config_param~load_uint(32);
+    int total = config_param~load_uint(16);
+    int main = config_param~load_uint(16);
     throw_unless(0xf015, total >= main);
     throw_unless(0xf015, main >= 1);
 
-    ;; todo: check that the block corresponds to currently known epoch
-    ;; int time_now = now();
-    ;; throw_unless(error::block_does_not_correspond_to_current_epoch, (utime_since < time_now) & (utime_until > time_now));
-
     cell validator_set = begin_cell().end_cell();
     if (param_type == 0x11) {
-        validator_set = config_param_34~load_dict();
-        return (validator_set);
+        validator_set = config_param~load_dict();
+        return (validator_set, utime_since, utime_until);
     }
     if (param_type == 0x12) {
-        config_param_34~load_uint(64);
-        validator_set = config_param_34~load_dict();
-        return (validator_set);
+        config_param~load_uint(64);
+        validator_set = config_param~load_dict();
+        return (validator_set, utime_since, utime_until);
     }
     throw(error::unknown_param_type);
-    return (validator_set);
+    return (validator_set, utime_since, utime_until);
 }
 
 (int, int, int) load_validator(slice validator) impure inline {
@@ -213,7 +227,6 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 (int) sum_validator_weights(cell validator_set) impure inline {
     int sum = 0;
     (int key, slice value, int success) = validator_set.udict_get_min?(16);
-    
     while (success) {
         (_, int pubkey, int weight) = load_validator(value);
         sum += weight;
@@ -228,8 +241,9 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
     return (node_id);
 }
 
-(int) verify_signatures(cell validator_set, cell signatures, slice message) impure inline {
+() verify_signatures(cell validator_set, cell signatures, slice message) impure inline {
     int total_weight = 0;
+    int sum_total_weight = sum_validator_weights(validator_set);
     (int key, slice value, int success) = validator_set.udict_get_min?(16);
     
     while (success) {
@@ -245,7 +259,31 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         }
         (key, value, success) = validator_set.udict_get_next?(16, key);
     }
-    return (total_weight);
+    throw_unless(0xf017, total_weight > 0);
+    throw_unless(0xf018, total_weight > sum_total_weight * 2 / 3);
+    ~strdump("block is verified");
+    return ();
+}
+
+() update_current_epoch(cell config_param_32_cs, cell config_param_34_cs, cell config_param_36_cs, int gen_utime) impure {
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until) = load_data();
+    if (slice_data_empty?(config_param_36_cs.begin_parse())) {
+        ;; This is the first key block in a new epoch, validation is done by cur_validator_set and validator set is updated
+        (cell new_prev_validator_set, _, _) = load_validator_set(config_param_32_cs.begin_parse());
+        (cell new_cur_validator_set, int new_utime_since, int new_utime_until) = load_validator_set(config_param_34_cs.begin_parse());
+        throw_unless(0xf018, equal_slices_bits(new_cur_validator_set.begin_parse(), next_validator_set.begin_parse()));
+        throw_unless(0xf019, equal_slices_bits(new_prev_validator_set.begin_parse(), cur_validator_set.begin_parse()));
+        throw_unless(0xf020, (new_utime_since <= gen_utime) & (new_utime_until > gen_utime));
+        save_data(new_prev_validator_set, new_cur_validator_set, begin_cell().end_cell(), new_utime_since, new_utime_until);
+    } else {
+        ;; This is a transitioning key block, validation is done by cur_validator_set and next validator set is updated
+        (cell new_next_validator_set, _, _) = load_validator_set(config_param_36_cs.begin_parse());
+        (cell new_cur_validator_set, _, _) = load_validator_set(config_param_34_cs.begin_parse());
+        throw_unless(0xf021, equal_slices_bits(new_cur_validator_set.begin_parse(), cur_validator_set.begin_parse()));
+        throw_unless(error::block_does_not_correspond_to_current_epoch, (utime_since < gen_utime) & (utime_until >= gen_utime));
+        save_data(prev_validator_set, cur_validator_set, new_next_validator_set, utime_since, utime_until);
+    }
+    ~strdump("current epoch is updated");
 }
 
 () recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
@@ -262,7 +300,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
     int op = in_msg_body~load_uint(32);
 
-    (int is_active) = load_data();
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until) = load_data();
 
     ;; ~dump(slice_data_empty?(first_ref_slice));
     ;; ~dump(slice_refs_empty?(first_ref_slice));
@@ -279,38 +317,33 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         slice block_data_cs = block_cs~load_ref().begin_parse();
 
         (slice block_header_id_cs, int root_hash) = verify_block_header(block_header_cs);
+
         slice block_data = verify_block_data(block_data_cs, block_header_id_cs);
-        block_data = load_and_check_block_data(block_data);
-        slice config_param_34_cs = load_config_param_34(block_data);
-        cell validator_set = load_validator_set(config_param_34_cs);
-        int sum_total_weight = sum_validator_weights(validator_set);
+
+        (block_data, int gen_utime) = load_block_data(block_data);
+
+        (cell config_param_32_cs, cell config_param_34_cs, cell config_param_36_cs, int is_key_block) = load_config_params(block_data);
+        throw_unless(error::not_a_key_block, is_key_block);
 
         (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
         slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
 
-        int total_weight = verify_signatures(validator_set, signatures, message);
-        throw_unless(0xf017, total_weight > sum_total_weight * 2 / 3);
-        ~strdump("block is verified");
+        verify_signatures(cur_validator_set, signatures, message);
+        
+        update_current_epoch(config_param_32_cs, config_param_34_cs, config_param_36_cs, gen_utime);
 
-
-        ;; todo: check that the block corresponds to currently known epoch 
-        ;; todo: loads new epoch parameters (validators)
-        ;; todo: updates currently known epoch
-        ;; todo: If the block is invalid (or does not correspond to currently known epoch) it should be rejected.
-
-
-        ;; var ok_msg_body = begin_cell()
-        ;;                 .store_uint(op::ok, 32)
-        ;;                 .store_uint(query_id, 64)
-        ;;                 .store_uint(block_hash, 256)
-        ;;                 .end_cell();
-        ;; var msg = begin_cell()
-        ;;         .store_uint(0x18, 6)
-        ;;         .store_slice(sender_address)
-        ;;         .store_coins(0)
-        ;;         .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-        ;;         .store_ref(ok_msg_body);
-        ;; send_raw_message(msg, 64);
+        var ok_msg_body = begin_cell()
+                        .store_uint(op::ok, 32)
+                        .store_uint(query_id, 64)
+                        .store_uint(root_hash, 256)
+                        .end_cell();
+        var msg = begin_cell()
+                .store_uint(0x18, 6)
+                .store_slice(sender_address)
+                .store_coins(0)
+                .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(ok_msg_body);
+        send_raw_message(msg.end_cell(), 64);
 
         return ();
     }
@@ -320,25 +353,35 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         cell block = in_msg_body~load_ref();
         cell signatures = in_msg_body~load_ref();
 
-        ;; todo
-        ;; todo: may have all unused branches pruned
+        slice block_cs = block.begin_parse();
+        slice block_header_cs = block_cs~load_ref().begin_parse();
+        slice block_data_cs = block_cs~load_ref().begin_parse();
 
-        ;; todo: check that the block corresponds to currently known epoch and correctly signed
-        ;; todo: if not true, reject it
+        (slice block_header_id_cs, int root_hash) = verify_block_header(block_header_cs);
 
+        slice block_data = verify_block_data(block_data_cs, block_header_id_cs);
 
-        ;; var correct_msg_body = begin_cell()
-        ;;                 .store_uint(op::correct, 32)
-        ;;                 .store_uint(query_id, 64)
-        ;;                 .store_uint(block_hash, 256)
-        ;;                 .end_cell();
-        ;; var msg = begin_cell()
-        ;;         .store_uint(0x18, 6)
-        ;;         .store_slice(sender_address)
-        ;;         .store_coins(0)
-        ;;         .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-        ;;         .store_ref(correct_msg_body);
-        ;; send_raw_message(msg, 64);
+        (block_data, int gen_utime) = load_block_data(block_data);
+
+        throw_unless(0xf022, (gen_utime >= utime_since) | (gen_utime < utime_until));
+
+        (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
+        slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
+
+        verify_signatures(cur_validator_set, signatures, message);
+        
+        var correct_msg_body = begin_cell()
+                        .store_uint(op::correct, 32)
+                        .store_uint(query_id, 64)
+                        .store_uint(root_hash, 256)
+                        .end_cell();
+        var msg = begin_cell()
+                .store_uint(0x18, 6)
+                .store_slice(sender_address)
+                .store_coins(0)
+                .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(correct_msg_body);
+        send_raw_message(msg.end_cell(), 64);
 
         return ();
     }

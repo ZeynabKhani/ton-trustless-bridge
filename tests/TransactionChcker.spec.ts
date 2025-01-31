@@ -50,12 +50,17 @@ describe.only('TransactionChecker', () => {
 
     let blockchain: Blockchain;
     let deployer: SandboxContract<TreasuryContract>;
+    let lt: SandboxContract<TreasuryContract>;
     let transactionChecker: SandboxContract<TransactionChecker>;
+    let initialBlock: liteServer_BlockData;
 
     beforeEach(async () => {
         blockchain = await Blockchain.create();
-
-        transactionChecker = blockchain.openContract(TransactionChecker.createFromConfig({ workchain: 0 }, code, 0));
+        lt = await blockchain.treasury('lt');
+        
+        transactionChecker = blockchain.openContract(TransactionChecker.createFromConfig({ 
+            lite_client: lt.address,
+        }, code, 0));
         
         deployer = await blockchain.treasury('deployer');
 
@@ -69,7 +74,7 @@ describe.only('TransactionChecker', () => {
         });
     });
 
-    it('should deploy', async () => {
+    it('should return correct', async () => {
         // console.log(Buffer.from(txWithProof.id.rootHash).toString('hex'))
 
         const txProof = await TonRocks.types.Cell.fromBoc(Buffer.from(txWithProof.proof));
@@ -80,6 +85,25 @@ describe.only('TransactionChecker', () => {
         // console.log("1:", Buffer.from(blockHeader.id.rootHash).toString('hex'))
         // console.log("2:", Buffer.from(txProofHash).toString('hex'))
         //44477283723053006053453491358860383818778593468817379682038688175347672068976
-        await transactionChecker.sendCheckTransaction(deployer.getSender(), txWithProof, blockHeader, block, signatures);
+        const result = await transactionChecker.sendCheckTransaction(deployer.getSender(), txWithProof, blockHeader, block, signatures);
+        // expect(result.transactions).toHaveTransaction({
+        //     from: transactionChecker.address,
+        //     to: lt.address,
+        //     deploy: true,
+        //     success: true,
+        // });
+        expect ((await transactionChecker.getKey(0n)).toString()).toBe(deployer.address.toString())
+        await transactionChecker.sendCorrect(lt.getSender());
+        expect ((await transactionChecker.getKey(0n)).toString()).toBe("0")
+    });
+
+    it('should reject', async () => {
+        const txProof = await TonRocks.types.Cell.fromBoc(Buffer.from(txWithProof.proof));
+        const txProofFirstRef: TonRocksCell = txProof[0].refs[0];
+        
+        const result = await transactionChecker.sendCheckTransaction(deployer.getSender(), txWithProof, blockHeader, block, signatures);
+        expect ((await transactionChecker.getKey(0n)).toString()).toBe(deployer.address.toString())
+        await transactionChecker.sendReject(lt.getSender());
+        expect ((await transactionChecker.getKey(0n)).toString()).toBe("0")
     });
 });

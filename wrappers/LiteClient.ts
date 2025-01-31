@@ -6,31 +6,38 @@ import {
     contractAddress,
     ContractProvider,
     Dictionary,
-    DictionaryKey,
-    DictionaryKeyTypes,
     DictionaryValue,
     Sender,
     SendMode,
     Slice,
     toNano,
+    Builder,
 } from '@ton/core';
 import crypto from 'crypto';
-import { getRepr } from '@ton/core/dist/boc/cell/descriptor';
 import { Op } from './Constants';
 import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
 import { liteServer_blockHeader } from 'ton-lite-client/dist/schema';
 import TonRocks, { pubkeyHexToEd25519DER } from '@oraichain/tonbridge-utils';
 import { assert } from 'node:console';
-import { LevelMask } from '@ton/core/dist/boc/cell/LevelMask';
-import { sha256, sha256_sync } from '@ton/crypto';
+import { sha256 } from '@ton/crypto';
 import { BitString, ValidatorSignature } from '@oraichain/tonbridge-utils/build/types';
-import { HexBinary } from '@oraichain/tonbridge-contracts-sdk/build/types';
-import { loadBlockInfo } from '@oraichain/tonbridge-utils/build/blockchain/BlockParser';
 
-export type LiteClientConfig = {};
+export type LiteClientConfig = {
+    prev_validator_set: Dictionary<number, ValidatorDescr>;
+    cur_validator_set: Dictionary<number, ValidatorDescr>;
+    next_validator_set: Dictionary<number, ValidatorDescr>;
+    utime_since: number;
+    utime_until: number;
+};
 
 export function liteClientConfigToCell(config: LiteClientConfig): Cell {
-    return beginCell().endCell();
+    return beginCell()
+        .storeDict(config.prev_validator_set)
+        .storeDict(config.cur_validator_set)
+        .storeDict(config.next_validator_set)
+        .storeUint(config.utime_since, 32)
+        .storeUint(config.utime_until, 32)
+        .endCell();
 }
 
 interface SigPubKey {
@@ -40,10 +47,10 @@ interface SigPubKey {
 
 interface ValidatorDescr {
     _: 'ValidatorDescr';
-    type: any;
+    type: 'sig_pubkey' | 'addr';
     public_key: SigPubKey;
-    weight: any;
-    adnl_addr: any;
+    weight: bigint;
+    adnl_addr?: bigint;
 }
 
 interface UserFriendlyValidator extends ValidatorDescr {
@@ -61,21 +68,21 @@ function loadSigPubKey(s: Slice): SigPubKey {
 function loadValidatorDescr(s: Slice): ValidatorDescr | null {
     let data: ValidatorDescr = {
         _: 'ValidatorDescr',
-        type: '',
+        type: 'sig_pubkey',
         public_key: { _: 'SigPubKey', pubkey: BigInt(0) },
-        weight: 0,
-        adnl_addr: BigInt(0),
+        weight: BigInt(0),
     };
+
     let type = s.loadUint(8);
     if (type === 0x53) {
-        data.type = '';
+        data.type = 'sig_pubkey';
         data.public_key = loadSigPubKey(s);
-        data.weight = Number(s.loadUintBig(64));
+        data.weight = s.loadUintBig(64);
         return data;
     } else if (type === 0x73) {
         data.type = 'addr';
         data.public_key = loadSigPubKey(s);
-        data.weight = Number(s.loadUintBig(64));
+        data.weight = s.loadUintBig(64);
         data.adnl_addr = s.loadUintBig(256);
         return data;
     }
@@ -84,12 +91,31 @@ function loadValidatorDescr(s: Slice): ValidatorDescr | null {
 
 function ValidatorDescrValue(): DictionaryValue<ValidatorDescr> {
     return {
-        serialize: (src: ValidatorDescr) => {
-            throw new Error('Serialization not implemented');
+        serialize: (src: ValidatorDescr, builder: Builder) => {
+            if (src.type === 'sig_pubkey') {
+                builder
+                    .storeUint(0x53, 8) // type byte for pubkey only
+                    .storeUint(0x8e81278a, 32) // SigPubKey magic
+                    .storeUint(src.public_key.pubkey, 256)
+                    .storeUint(BigInt(src.weight), 64); // Convert weight to BigInt
+            } else if (src.type === 'addr') {
+                builder
+                    .storeUint(0x73, 8) // type byte for with ADNL address
+                    .storeUint(0x8e81278a, 32) // SigPubKey magic
+                    .storeUint(src.public_key.pubkey, 256)
+                    .storeUint(BigInt(src.weight), 64) // Convert weight to BigInt
+                    .storeUint(src.adnl_addr || 0, 256);
+            }
         },
-        parse: (src: Slice) => {
-            const result = loadValidatorDescr(src);
-            if (result === null) throw new Error('Failed to parse ValidatorDescr');
+        parse: (src: Slice): ValidatorDescr => {
+            const type = src.loadUint(8);
+            const result: ValidatorDescr = {
+                _: 'ValidatorDescr',
+                type: type === 0x53 ? 'sig_pubkey' : 'addr',
+                public_key: loadSigPubKey(src),
+                weight: src.loadUintBig(64), // Load as BigInt
+                adnl_addr: type === 0x73 ? src.loadUintBig(256) : undefined,
+            };
             return result;
         },
     };
@@ -117,6 +143,97 @@ export class LiteClient implements Contract {
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell().endCell(),
         });
+    }
+
+    static getInitialDataConfig(block: liteServer_BlockData) {
+        const data = Cell.fromBoc(Buffer.from(block.data))[0].beginParse();
+        data.loadUint(32);
+        data.loadInt(32); // global_id
+        const info = data.loadRef();
+        data.loadRef();
+        data.loadRef();
+        const extra = data.loadRef().beginParse();
+        extra.loadUint(32);
+        extra.loadRef();
+        extra.loadRef();
+        extra.loadRef();
+        extra.loadUintBig(256);
+        extra.loadUintBig(256); // created_by
+        const McBlockExtra = extra.loadRef().beginParse(); // or custom
+        McBlockExtra.loadUint(16); // magic cca5
+        const key_block = McBlockExtra.loadBit();
+
+        McBlockExtra.loadRef(); // shard_hashes
+        McBlockExtra.loadRef(); // shard_fees
+        McBlockExtra.loadRef(); // additional_info
+
+        let curValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let prevValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let nextValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let utime_since: number = 0;
+        let utime_until: number = 0;
+        if (key_block) {
+            let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
+            McBlockExtra.loadBits(75); // not sure what this is
+            McBlockExtra.loadBits(256); // config_address
+
+            // loading current validator set
+            let configParam34 = configParamsCell.get(34)!.beginParse();
+            const type = configParam34.loadUint(8);
+            utime_since = configParam34.loadUint(32);
+            utime_until = configParam34.loadUint(32);
+            const total = configParam34.loadUint(16);
+            const main = configParam34.loadUint(16);
+            if (total! < main!) throw Error('data.total < data.main');
+            if (main! < 1) throw Error('data.main < 1');
+            if (type === 0x11) {
+                curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                // console.log(type, utime_since, utime_until, total, main, list);
+            } else if (type === 0x12) {
+                // type = 'ext';
+                const total_weight = configParam34.loadUintBig(64);
+                curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                // console.log(type, utime_since, utime_until, total, main, total_weight, list);
+            }
+
+            // loading previous validator set
+            let configParam32 = configParamsCell.get(32)!.beginParse();
+            configParam32.loadUintBig(8 + 32 + 32 + 16 + 16);
+            if (type === 0x11) {
+                prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            } else if (type === 0x12) {
+                configParam32.loadUintBig(64);
+                prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            }
+
+            // loading next validator set
+            let configParam36 = configParamsCell.get(36)?.beginParse();
+            if (!configParam36) throw Error('configParam36 not found');
+            configParam36.loadUintBig(8 + 32 + 32 + 16 + 16);
+            if (type === 0x11) {
+                nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            } else if (type === 0x12) {
+                configParam36.loadUintBig(64);
+                nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            }
+        }
+
+        return {
+            curValidatorSet,
+            prevValidatorSet,
+            nextValidatorSet,
+            utime_since,
+            utime_until,
+        };
     }
 
     static async testBlockData(blockDataCell: Cell, signatures: ValidatorSignature[], message: Buffer) {
@@ -192,7 +309,7 @@ export class LiteClient implements Contract {
                 friendlyValidators.push({
                     ...entry[1],
                     node_id: nodeId.toString('base64'),
-                    weight: +entry[1].weight.toString(),
+                    weight: entry[1].weight,
                     pubkey,
                 });
             }
@@ -255,13 +372,13 @@ export class LiteClient implements Contract {
             .storeRef(Cell.fromBoc(Buffer.from(block.data))[0])
             .endCell();
 
-        const message = Buffer.concat([
-            // magic prefix of message signing
-            Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
-            Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
-            Buffer.from(blockHeader.id.fileHash),
-        ]);
-        LiteClient.testBlockData(blockDataCell, signatures, message); // console.log('works for 27533522');
+        // const message = Buffer.concat([
+        //     // magic prefix of message signing
+        //     Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
+        //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
+        //     Buffer.from(blockHeader.id.fileHash),
+        // ]);
+        // LiteClient.testBlockData(blockDataCell, signatures, message); // console.log('works for 27533522');
 
         const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
         let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
@@ -279,6 +396,74 @@ export class LiteClient implements Contract {
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell()
                 .storeUint(Op.new_key_block, 32)
+                .storeUint(0, 64)
+                .storeRef(blockCell)
+                .storeDict(signaturesCell)
+                .endCell(),
+            value: toNano('0.05'),
+        });
+    }
+
+    async sendCheckBlock(
+        provider: ContractProvider,
+        via: Sender,
+        blockHeader: liteServer_blockHeader,
+        block: liteServer_BlockData,
+        signatures: ValidatorSignature[],
+    ) {
+        const blockHeaderIdCell = beginCell()
+            .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
+            .storeInt(blockHeader.id.workchain, 32)
+            .storeInt(BigInt(blockHeader.id.shard), 64)
+            .storeInt(blockHeader.id.seqno, 32)
+            .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.rootHash).toString('hex')), 256)
+            .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.fileHash).toString('hex')), 256)
+            .endCell();
+        const blockHeaderCell = beginCell()
+            .storeInt(0x752d8219, 32) // kind: liteServer.blockHeader
+            .storeRef(blockHeaderIdCell) // id
+            .storeUint(blockHeader.mode, 32) // mode
+            .storeRef(Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0]) // header_proof
+            .endCell();
+
+        const blockDataIdCell = beginCell()
+            .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
+            .storeInt(block.id.workchain, 32)
+            .storeInt(BigInt(block.id.shard), 64)
+            .storeInt(block.id.seqno, 32)
+            .storeUint(BigInt('0x' + Buffer.from(block.id.rootHash).toString('hex')), 256)
+            .storeUint(BigInt('0x' + Buffer.from(block.id.fileHash).toString('hex')), 256)
+            .endCell();
+        const blockDataCell = beginCell()
+            .storeInt(0x6377cf0d, 32) // liteServer.getBlock
+            .storeRef(blockDataIdCell)
+            .storeRef(Cell.fromBoc(Buffer.from(block.data))[0])
+            .endCell();
+
+        // const message = Buffer.concat([
+        //     // magic prefix of message signing
+        //     Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
+        //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
+        //     Buffer.from(blockHeader.id.fileHash),
+        // ]);
+        // LiteClient.testBlockData(blockDataCell, signatures, message); // console.log('works for 27533522');
+
+        const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
+        let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
+        for (const item of signatures) {
+            const signature = Buffer.from(item.signature, 'base64').toString('hex');
+            const signaturePart1 = BigInt('0x' + signature.substring(0, 64));
+            const signaturePart2 = BigInt('0x' + signature.substring(64));
+            signaturesCell.set(
+                BigInt('0x' + Buffer.from(item.node_id_short, 'base64').toString('hex')),
+                beginCell().storeUint(signaturePart1, 256).storeUint(signaturePart2, 256).endCell(),
+            );
+        }
+
+        await provider.internal(via, {
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(Op.check_block, 32)
                 .storeUint(0, 64)
                 .storeRef(blockCell)
                 .storeDict(signaturesCell)

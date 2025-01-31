@@ -20,10 +20,12 @@ import { LiteRoundRobinEngine } from '../ton-lite-client/dist';
 import { liteServer_BlockData, liteServer_blockHeader } from 'ton-lite-client/dist/schema';
 import { ValidatorSignature } from '@oraichain/tonbridge-utils';
 
-export type transactionCheckerConfig = {};
+export type transactionCheckerConfig = {
+    lite_client: Address
+};
 
 export function transactionCheckerConfigToCell(config: transactionCheckerConfig): Cell {
-    return beginCell().endCell();
+    return beginCell().storeAddress(config.lite_client).storeDict().endCell();
 }
 
 export class TransactionChecker implements Contract {
@@ -62,8 +64,7 @@ export class TransactionChecker implements Contract {
         // const transaction: Cell = beginCell().storeSlice(txHash).storeSlice(rootHash).endCell();
         const proof: Cell = Cell.fromBoc(Buffer.from(txWithProof.proof))[0]
         const aggregatedBlock = this.create_block_cell(blockHeader, block)
-        const signature = this.create_signature_cell(signatures);
-        const current_block: Cell = beginCell().storeRef(aggregatedBlock).storeRef(signature).endCell();
+        const current_block: Cell = beginCell().storeRef(aggregatedBlock).storeDict(this.create_signature_cell(signatures)).endCell();
         await provider.internal(via, {
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell()
@@ -78,17 +79,17 @@ export class TransactionChecker implements Contract {
     }
 
     create_signature_cell = (signatures: ValidatorSignature[]) => {
-        return beginCell().endCell();
-        // let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
-        //     for (const item of signatures) {
-        //         const signature = Buffer.from(item.signature, 'base64').toString('hex');
-        //         const signaturePart1 = BigInt('0x' + signature.substring(0, 64));
-        //         const signaturePart2 = BigInt('0x' + signature.substring(64));
-        //         signaturesCell.set(
-        //             BigInt('0x' + Buffer.from(item.node_id_short, 'base64').toString('hex')),
-        //             beginCell().storeUint(signaturePart1, 256).storeUint(signaturePart2, 256).endCell(),
-        //         );
-        //     }
+        let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
+            for (const item of signatures) {
+                const signature = Buffer.from(item.signature, 'base64').toString('hex');
+                const signaturePart1 = BigInt('0x' + signature.substring(0, 64));
+                const signaturePart2 = BigInt('0x' + signature.substring(64));
+                signaturesCell.set(
+                    BigInt('0x' + Buffer.from(item.node_id_short, 'base64').toString('hex')),
+                    beginCell().storeUint(signaturePart1, 256).storeUint(signaturePart2, 256).endCell(),
+                );
+            }
+        return signaturesCell
     }
 
     create_block_cell = (blockHeader: liteServer_blockHeader, block: liteServer_BlockData) => {
@@ -143,4 +144,40 @@ export class TransactionChecker implements Contract {
 
         return txProofCell
     }
+
+    async sendCorrect(
+        provider: ContractProvider,
+        via: Sender,
+    ) {
+        await provider.internal(via, {
+            value: toNano('0.05'),
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell().storeUint(Op.correct, 32).storeUint(0, 64).storeRef(beginCell().endCell()).endCell(),
+        });
+    }
+
+    async sendReject(
+        provider: ContractProvider,
+        via: Sender,
+    ) {
+        await provider.internal(via, {
+            value: toNano('0.05'),
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell().storeUint(Op.reject, 32).storeUint(0, 64).storeRef(beginCell().endCell()).endCell(),
+        });
+    }
+
+    async getKey(provider: ContractProvider, key: bigint) {
+        const res = await provider.get('get_key', [
+            { type: 'int', value: key },
+        ]);
+        let address;
+        try {
+            address = res.stack.readAddress()
+        } catch (e) {
+            address = "0"
+        }
+        return address
+    }
+    
 }

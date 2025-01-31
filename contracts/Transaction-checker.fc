@@ -20,7 +20,7 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
     slice ds = get_data().begin_parse();
     return (
         ds~load_msg_addr(), ;;lite client address
-        ds~load_ref() ;; check transaction requests
+        ds~load_dict() ;; check transaction requests
     );
 }
 
@@ -28,7 +28,7 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
     set_data(
         begin_cell()
             .store_slice(lite_client)
-            .store_ref(check_transaction_requests)
+            .store_dict(check_transaction_requests)
             .end_cell()
     );
 }
@@ -99,7 +99,6 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
     slice sender_address = cs~load_msg_addr();
 
     int op = in_msg_body~load_uint(32);
-
     (slice lite_client, cell check_transaction_requests) = load_data();
 
     if (op == op::check_transaction) {
@@ -148,21 +147,21 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
                 .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
                 .store_ref(check_block_msg_body);
 
-        send_raw_message(msg.end_cell(), 64); 
+        ;; send_raw_message(msg.end_cell(), 64); 
+
+        save_data(lite_client, check_transaction_requests);
 
         return ();
     }
 
     if (op == op::correct) {
         throw_unless(error::unauthorized, equal_slices_bits(sender_address, lite_client));
-
         int query_id = in_msg_body~load_uint(64); ;; query id
         cell transaction = in_msg_body~load_ref(); ;; transaction hash and transaction account block
-
         (slice from_address, int success) = check_transaction_requests.udict_get?(64, query_id);
-
         if (success) {
-            check_transaction_requests.udict_delete?(64, query_id);
+            check_transaction_requests~udict_delete?(64, query_id);
+            (slice from_address, int success) = check_transaction_requests.udict_get?(64, query_id);
 
             var transaction_checked_msg_body = begin_cell()
                             .store_uint(op::transaction_checked, 32)
@@ -174,10 +173,13 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
                     .store_coins(0)
                     .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
                     .store_ref(transaction_checked_msg_body);
-            send_raw_message(msg.end_cell(), 64); 
+            ;; send_raw_message(msg.end_cell(), 64); 
         } else {
             throw(error::transaction_not_found);
         }
+
+        save_data(lite_client, check_transaction_requests);
+        return ();
     }
 
     if (op == op::reject) {
@@ -190,8 +192,16 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
         if (success) {
             check_transaction_requests~udict_delete?(64, query_id);
         } 
+
+        save_data(lite_client, check_transaction_requests);
+        return ();
     }
     
-
     throw(error::unknown_opcode);
+}
+
+(slice) get_key(int key) method_id {
+    (slice lite_client, cell check_transaction_requests) = load_data();
+    (slice payload, int success) = check_transaction_requests.udict_get?(64, key);
+    return payload;
 }
