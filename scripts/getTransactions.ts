@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import { sleep } from '@ton/blueprint';
 import { loadBlockExtra } from '@oraichain/tonbridge-utils/build/blockchain/BlockParser';
 import { compile, NetworkProvider } from '@ton/blueprint';
+import { BlockID } from '../ton-lite-client/dist';
 
 export function intToIP(int: number) {
     var part1 = int & 255;
@@ -52,28 +53,22 @@ export async function run(provider: NetworkProvider) {
     const client = new LiteClient({ engine });
     const master = await client.getMasterchainInfo();
 
-    // key block. Got this by querying a block, then deserialize it, then find prev_key_block_seqno
-    // it has to be a key block to include validator set & block extra to parse into the contract
-    let blockInfo = master.last;
-    let parsedBlock: ParsedBlock;
-    let validatorSet;
-    let nextValidatorSet;
-
-    let friendlyValidators: UserFriendlyValidator[] = [];
-
     let existingData = {};
 
-    // await verifyMasterchainBlock(client, blockInfo, friendlyValidators);
+    const initialDataRaw = fs.readFileSync(require.resolve('../tests/keyblock2.json'), 'utf8');
+    let initialData = JSON.parse(initialDataRaw);
+    let blockInfo : BlockID = initialData.header.id;
+    blockInfo.rootHash = Buffer.from(blockInfo.rootHash)
+    blockInfo.fileHash = Buffer.from(blockInfo.fileHash)
 
-    // We find the transaction that we want to verify given an account, verify its block and then verify the tx
-    await sleep(2000);
-    const latestBlock2 = await client.getMasterchainInfo();
     const txCount = 1;
-    const addr = Address.parse('Ef8zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM0vF');
-    const accState = await client.getAccountState(addr, latestBlock2.last);
+    const addr = Address.parse('kf8zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM_BP');
+    const accState = await client.getAccountState(addr, blockInfo);
+    // const wantedTxHash = " "
     if (!accState.lastTx) {
         throw new Error('No transactions found for account');
     }
+
     const offset = {
         hash: accState.lastTx.hash.toString(16),
         lt: accState.lastTx.lt.toString(10),
@@ -86,10 +81,10 @@ export async function run(provider: NetworkProvider) {
     }));
 
     for (let tx of txs) {
-        const wantedTxHash = tx.tx.hash().toString('hex');
-        console.log('wanted tx hash: ', wantedTxHash);
-        try {
-            // it means this tx is in a shard block -> we verify shard blocks along with materchain block
+        // console.log(Buffer.from(tx.blockId.rootHash).toString('hex'))
+        // console.log(Buffer.from(initialData.header.id.rootHash).toString('hex'))
+        if (Buffer.from(tx.blockId.rootHash).toString('hex') == Buffer.from(initialData.header.id.rootHash).toString('hex')) {
+            console.log(tx)
             if (tx.blockId.workchain !== -1) {
                 throw new Error('Transaction is in a shard block');
             } else {
@@ -111,11 +106,6 @@ export async function run(provider: NetworkProvider) {
                 fs.writeFileSync('tests/blockForTx.json', JSON.stringify(mergedData, null, 2));
                 console.log('Block header written to tests/blockForTx.json');
                 
-                const blockHash = Cell.fromBoc(blockHeader.headerProof)[0].refs[0].hash(0);
-                assert(blockHash.toString('hex') === blockHeader.id.rootHash.toString('hex'));
-                // console.log(blockHash.toString('hex'))
-                console.log('masterchain block:', tx.blockId.seqno);
-
                 const tonweb = new TonWeb(
                     new TonWeb.HttpProvider('https://testnet.toncenter.com/api/v2/jsonRPC', {
                         apiKey: process.env.apiKey,
@@ -126,7 +116,7 @@ export async function run(provider: NetworkProvider) {
                         seqno: tx.blockId.seqno,
                     })) as any;
                     const signatures = valSignatures.signatures as ValidatorSignature[];
-
+    
                     const signaturesData = {
                         signatures: signatures,
                     };
@@ -140,18 +130,15 @@ export async function run(provider: NetworkProvider) {
                     console.error('Error fetching block signatures:', error);
                     throw error;
                 }
-
+    
                 let blockInfo = master.last;
-                let parsedBlock: ParsedBlock;
-
+    
                 const block = await engine.query(Functions.liteServer_getBlock, {
                     kind: 'liteServer.getBlock',
                     id: blockInfo,
                 });
-                parsedBlock = await parseBlock(block);
+                
                 try {
-                    console.log('parsed key block seqno:', parsedBlock.info.seq_no);
-                    // console.log('parsed block validator set:', validatorSet);
                     const blockData = {
                         block: {
                             kind: block.kind,
@@ -169,60 +156,34 @@ export async function run(provider: NetworkProvider) {
                     console.error('Error accessing block config:', error);
                 }
             }
-        } catch (error) {
-            console.error('Error verifying masterchain block:', error);
-        }
-
-        // Query the transaction proof
-        const txWithProof = await client.getAccountTransaction(addr, tx.tx.lt.toString(10), tx.blockId);
-        existingData = {};
-        if (fs.existsSync('tests/txData.json')) {
-            existingData = JSON.parse(fs.readFileSync('tests/txData.json', 'utf8'));
-        }
-
-
-        const txProof = await TonRocks.types.Cell.fromBoc(txWithProof.proof);
-        const txProofFirstRef: TonRocksCell = txProof[0].refs[0];
-
-        // Prove that the transaction proof is related to our verified block
-        const txProofHash = txProofFirstRef.hashes[0];
-        assert(Buffer.from(txProofHash).toString('hex') === tx.blockId.rootHash.toString('hex'));
-
-        const txData = {
-            id: txWithProof.id,
-            proof: txWithProof.proof,
-            transaction: txWithProof.transaction,
-            rootHash: Buffer.from(txProofHash).toString('hex')
-        };
-
-        const mergedData = { ...existingData, ...txData };
-        fs.writeFileSync('tests/txData.json', JSON.stringify(mergedData, null, 2));
-        console.log('tx with proof written to tests/txData.json');
-
-
-        // parse block to get block transactions to prove that the wantedTxHash got fromtx.tx.hash().toString("hex") is in the transaction proof.
-        const blockExtraCell: TonRocksCell = txProofFirstRef.refs[3];
-        const parsedBlockFromTxProof = loadBlockExtra(blockExtraCell, {
-            cs: 0,
-            ref: 0,
-        });
-        const accountBlocks = parsedBlockFromTxProof.account_blocks.map;
-        let foundWantedTxHash = false;
-        for (const entry of accountBlocks.entries()) {
-            const txs = entry[1].value.transactions.map;
-            for (const [_key, tx] of txs.entries()) {
-                const txCell: TonRocksCell = tx.value;
-                if (tx.value) {
-                    const txHash = Buffer.from(txCell.getHash(0)).toString('hex');
-                    if (txHash === wantedTxHash) {
-                        foundWantedTxHash = true;
-                    }
-                }
+    
+            // Query the transaction proof
+            const txWithProof = await client.getAccountTransaction(addr, tx.tx.lt.toString(10), tx.blockId);
+            existingData = {};
+            if (fs.existsSync('tests/txData.json')) {
+                existingData = JSON.parse(fs.readFileSync('tests/txData.json', 'utf8'));
             }
+    
+            const txProof = await TonRocks.types.Cell.fromBoc(txWithProof.proof);
+            const txProofFirstRef: TonRocksCell = txProof[0].refs[0];
+    
+            // Prove that the transaction proof is related to our verified block
+            const txProofHash = txProofFirstRef.hashes[0];
+            assert(Buffer.from(txProofHash).toString('hex') === tx.blockId.rootHash.toString('hex'));
+    
+            const txData = {
+                id: txWithProof.id,
+                proof: txWithProof.proof,
+                transaction: txWithProof.transaction,
+                rootHash: Buffer.from(txProofHash).toString('hex')
+            };
+    
+            const mergedData = { ...existingData, ...txData };
+            fs.writeFileSync('tests/txData.json', JSON.stringify(mergedData, null, 2));
+            console.log('tx with proof written to tests/txData.json');
         }
-        assert(foundWantedTxHash);
-        console.log('Transaction is verified successfully!');
     }
+
     engine.close();
 
 }

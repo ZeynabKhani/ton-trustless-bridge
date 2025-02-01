@@ -12,6 +12,7 @@ const error::transaction_not_found = 0xfff3;
 
 
 (slice, int) parse_exotic(cell x) asm "XCTOS";
+;; (slice, slice) load_dicts(slice s) asm(-> 1 0) "LDDICTS";
 int hash_at_level(cell x, int i) asm "CHASHIX";
 
 
@@ -119,14 +120,43 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
 
         (slice proof_slice, int is_exotic) = parse_exotic(proof);
         throw_unless(0xf001, is_exotic == -1);
-        int proof_root_hash = hash_at_level(proof_slice~load_ref(), 0);
+        cell first_proof_ref = proof_slice~load_ref();
+        int proof_root_hash = hash_at_level(first_proof_ref, 0);
 
         proof_slice~load_uint(8); ;;skip cell type
 
         throw_unless(error::inconsistent_proof, proof_root_hash == proof_slice~load_uint(256));
         throw_unless(error::inconsistent_proof, proof_root_hash == block_root_hash);
 
+        slice first_proof_ref_cs = first_proof_ref.begin_parse();
         ;; TODO check tx hash in proof
+        first_proof_ref_cs~load_ref(); ;; skip ref 0
+        first_proof_ref_cs~load_ref(); ;; skip ref 1
+        first_proof_ref_cs~load_ref(); ;; skip ref 2
+        cell block_extra = first_proof_ref_cs~load_ref(); ;; block extra 
+        slice block_extra_cs = block_extra.begin_parse();
+
+        block_extra_cs~load_uint(32);
+        block_extra_cs~load_ref();
+        block_extra_cs~load_ref();
+        cell account_blocks = block_extra_cs~load_ref();
+        ~dump(block_extra_cs~load_uint(256)); ;; this is correct
+        slice account_blocks_cs = account_blocks.begin_parse();
+        cell dict = account_blocks_cs~load_dict();
+        ;; ~dump(dict);
+        ;; (int key, slice value, int found) = ud?(dict, 256);
+        ;; ~dump(value);
+        ;; ~dump(1);
+        ;; ~dump(value);
+        ;; ~dump(found);
+        ;; while (found) {
+        ;;     ;; Process value...
+        ;;     ~dump(value);
+        ;;     ;; Get next key-value pair
+        ;;     (key, value, found) = account_blocks.udict_get_next?(64, key);
+        ;;     ~dump(found);
+        ;; }
+
         slice transaction_cs = transaction.begin_parse();
         cell tx_hash = transaction_cs~load_ref();
         ;; TODO load account block
@@ -147,7 +177,7 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
                 .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
                 .store_ref(check_block_msg_body);
 
-        ;; send_raw_message(msg.end_cell(), 64); 
+        send_raw_message(msg.end_cell(), 64); 
 
         save_data(lite_client, check_transaction_requests);
 

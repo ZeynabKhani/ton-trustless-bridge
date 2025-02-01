@@ -263,6 +263,7 @@ async function verifyMasterchainBlock(
         const accountBlocks = parsedBlockFromTxProof.account_blocks.map;
         let foundWantedTxHash = false;
         for (const entry of accountBlocks.entries()) {
+            console.log(entry[1].value.account_addr)
             const txs = entry[1].value.transactions.map;
             for (const [_key, tx] of txs.entries()) {
                 const txCell: TonRocksCell = tx.value;

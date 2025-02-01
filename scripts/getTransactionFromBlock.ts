@@ -61,12 +61,12 @@ async function verifyMasterchainBlock(liteClient: LiteClient, blockId: tonNode_b
             signatures: signatures,
         };
         let existingData = {};
-        if (fs.existsSync('tests/blockNew.json')) {
-            existingData = JSON.parse(fs.readFileSync('tests/blockNew.json', 'utf8'));
+        if (fs.existsSync('tests/block0.json')) {
+            existingData = JSON.parse(fs.readFileSync('tests/block0.json', 'utf8'));
         }
         const mergedData = { ...existingData, ...signaturesData };
-        fs.writeFileSync('tests/blockNew.json', JSON.stringify(mergedData, null, 2));
-        console.log('Signatures written to tests/blockNew.json');
+        fs.writeFileSync('tests/block0.json', JSON.stringify(mergedData, null, 2));
+        console.log('Signatures written to tests/block0.json');
 
         let friendlyValidators: UserFriendlyValidator[] = [];
         if (parsedBlock.extra?.custom?.config?.config?.map?.get('24') === undefined) {
@@ -164,88 +164,39 @@ async function verifyMasterchainBlock(liteClient: LiteClient, blockId: tonNode_b
 
     // key block. Got this by querying a block, then deserialize it, then find prev_key_block_seqno
     // it has to be a key block to include validator set & block extra to parse into the contract
-    let blockInfo = master.last;
-    let parsedBlock: ParsedBlock;
-    let validatorSet;
-    let nextValidatorSet;
-    let prevValidatorSet;
-    let numberOfKeyBlocks = 0;
-    while (true) {
-        // get block
-        const block = await engine.query(Functions.liteServer_getBlock, {
-            kind: 'liteServer.getBlock',
-            id: blockInfo,
-        });
-        parsedBlock = await parseBlock(block);
-        if (!parsedBlock.info.key_block) {
-            const keyBlockInfo = await client.getFullBlock(parsedBlock.info.prev_key_block_seqno);
-            const matchingShard = keyBlockInfo.shards.find(
-                (shard) => shard.seqno === parsedBlock.info.prev_key_block_seqno,
-            );
-            if (!matchingShard) {
-                throw new Error(`No shard found with seqno ${parsedBlock.info.prev_key_block_seqno}`);
-            }
-            blockInfo = {
-                kind: 'tonNode.blockIdExt',
-                ...matchingShard,
-            };
-            continue;
-        }
-        try {
-            validatorSet = parsedBlock.extra?.custom?.config?.config?.map?.get('22');
-            if (validatorSet === undefined) {
-                console.log('No validator set found in config (key 22)');
-            } else {
-                console.log('parsed key block seqno:', parsedBlock.info.seq_no);
-                // console.log('parsed block validator set:', validatorSet);
-            }
-        } catch (error) {
-            console.error('Error accessing block config:', error);
-        }
 
-        numberOfKeyBlocks++;
-        if (numberOfKeyBlocks > 0) {
-            const testData = {
-                block: {
-                    kind: block.kind,
-                    id: block.id,
-                    data: block.data,
-                },
-            };
-            fs.writeFileSync('tests/blockNew.json', JSON.stringify(testData, null, 2));
-            console.log('Block data written to tests/blockNew.json');
-            break;
-        }
-        const keyBlockInfo = await client.getFullBlock(parsedBlock.info.prev_key_block_seqno);
-        const matchingShard = keyBlockInfo.shards.find(
-            (shard) => shard.seqno === parsedBlock.info.prev_key_block_seqno,
-        );
-        if (!matchingShard) {
-            throw new Error(`No shard found with seqno ${parsedBlock.info.prev_key_block_seqno}`);
-        }
-        blockInfo = {
-            kind: 'tonNode.blockIdExt',
-            ...matchingShard,
-        };
-    }
+    const initialDataRaw = fs.readFileSync(require.resolve('../tests/keyblock2.json'), 'utf8');
+    let initialData = JSON.parse(initialDataRaw);
 
-    const blockHeader = await client.getBlockHeader(blockInfo);
-    const testData = {
-        header: {
-            id: blockHeader.id,
-            headerProof: blockHeader.headerProof,
-            mode: blockHeader.mode,
-        },
-    };
-    let existingData = {};
-    if (fs.existsSync('tests/blockNew.json')) {
-        existingData = JSON.parse(fs.readFileSync('tests/blockNew.json', 'utf8'));
-    }
-    const mergedData = { ...existingData, ...testData };
-    fs.writeFileSync('tests/blockNew.json', JSON.stringify(mergedData, null, 2));
-    console.log('Block header written to tests/blockNew.json');
+    let blockInfo = initialData.header.id;
 
-    await verifyMasterchainBlock(client, blockInfo, validatorSet);
+    const block = (await client.getFullBlock(initialData.block.id.seqno)).shards[0]
+    const transactions = await client.listBlockTransactions(block)
+    console.log(transactions.ids[1])
 
+     // const shard = (await client.getFullBlock(initialData.block.id.seqno)).shards[0]
+    // const transaction = shard.transactions[0]
+    // console.log(transaction.account)
+    // console.log(transaction.hash)
+    // console.log(transaction.lt)
+    // const rawTx = await client.getAccountTransaction(Address.parse(Buffer.from(transaction.account).toString()), transaction.lt, blockInfo);
+    // console.log(rawTx.id)
+
+    // console.log(blockInfo)
+    // const transactions = await client.listBlockTransactions(blockInfo)
+    // const proof = transactions.proof
+
+    // const txProof = await TonRocks.types.Cell.fromBoc(proof);
+    // const txProofFirstRef: TonRocksCell = txProof[0].refs[0];
+
+    // // Prove that the transaction proof is related to our verified block
+    // const txProofHash = txProofFirstRef.hashes[0];
+    // assert(Buffer.from(txProofHash).toString('hex') === initialData.block.rootHash.toString('hex'));
+
+    // client.engine.query(Functions.liteServer_getOneTransaction, {
+    //     kind: 'liteServer.getBlock',
+    //     id: blockId,
+    // });
+    
     engine.close();
 })();
