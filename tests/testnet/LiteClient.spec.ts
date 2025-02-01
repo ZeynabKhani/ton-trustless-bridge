@@ -1,13 +1,13 @@
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
 import { Cell, toNano } from '@ton/core';
-import { LiteClient } from '../wrappers/LiteClient';
+import { LiteClient } from '../../wrappers/LiteClient';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
 import * as fs from 'fs';
 import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
 import { liteServer_blockHeader } from 'ton-lite-client/dist/schema';
 import { ValidatorSignature } from '@oraichain/tonbridge-utils';
-import { Op } from '../wrappers/Constants';
+import { Op } from '../../wrappers/Constants';
 
 describe.skip('LiteClient', () => {
     let code: Cell;
@@ -17,9 +17,10 @@ describe.skip('LiteClient', () => {
     let block: liteServer_BlockData;
     let initialBlock: liteServer_BlockData;
     let signatures: ValidatorSignature[];
+    const workchain: number = 0;
 
     beforeAll(async () => {
-        code = await compile('LiteClient');
+        code = await compile('FastnetLiteClient');
     });
 
     let blockchain: Blockchain;
@@ -29,7 +30,7 @@ describe.skip('LiteClient', () => {
     beforeEach(async () => {
         blockchain = await Blockchain.create();
 
-        const initialDataRaw = fs.readFileSync(require.resolve('./keyblock1.json'), 'utf8');
+        const initialDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock1.json'), 'utf8');
         initialData = JSON.parse(initialDataRaw);
 
         initialBlock = {
@@ -38,7 +39,7 @@ describe.skip('LiteClient', () => {
             data: initialData.block.data,
         };
 
-        const testDataRaw = fs.readFileSync(require.resolve('./keyblock2.json'), 'utf8');
+        const testDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock2.json'), 'utf8');
         blockData = JSON.parse(testDataRaw);
 
         blockHeader = {
@@ -55,7 +56,7 @@ describe.skip('LiteClient', () => {
         signatures = blockData.signatures;
 
         const { curValidatorSet, prevValidatorSet, nextValidatorSet, utime_since, utime_until } =
-            LiteClient.getInitialDataConfig(initialBlock);
+            LiteClient.getInitialDataConfig(initialBlock, workchain);
 
         liteClient = blockchain.openContract(
             LiteClient.createFromConfig(
@@ -67,7 +68,7 @@ describe.skip('LiteClient', () => {
                     utime_until,
                 },
                 code,
-                0,
+                workchain,
             ),
         );
 
@@ -84,7 +85,7 @@ describe.skip('LiteClient', () => {
     });
 
     it('should set three new key blocks', async () => {
-        let result = await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures);
+        let result = await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures, workchain);
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
             to: deployer.address,
@@ -92,7 +93,7 @@ describe.skip('LiteClient', () => {
             op: Op.ok,
         });
 
-        let testDataRaw = fs.readFileSync(require.resolve('./keyblock3.json'), 'utf8');
+        let testDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock3.json'), 'utf8');
         blockData = JSON.parse(testDataRaw);
 
         blockHeader = {
@@ -108,7 +109,7 @@ describe.skip('LiteClient', () => {
         };
         signatures = blockData.signatures;
 
-        result = await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures);
+        result = await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures, workchain);
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
             to: deployer.address,
@@ -116,7 +117,7 @@ describe.skip('LiteClient', () => {
             op: Op.ok,
         });
 
-        testDataRaw = fs.readFileSync(require.resolve('./keyblock4.json'), 'utf8');
+        testDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock4.json'), 'utf8');
         blockData = JSON.parse(testDataRaw);
 
         blockHeader = {
@@ -132,7 +133,7 @@ describe.skip('LiteClient', () => {
         };
         signatures = blockData.signatures;
 
-        result = await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures);
+        result = await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures, workchain);
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
             to: deployer.address,
@@ -142,7 +143,7 @@ describe.skip('LiteClient', () => {
     });
 
     it('should check a block', async () => {
-        let result = await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures);
+        let result = await liteClient.sendNewKeyBlock(deployer.getSender(), blockHeader, block, signatures, workchain);
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
             to: deployer.address,
@@ -150,7 +151,7 @@ describe.skip('LiteClient', () => {
             op: Op.ok,
         });
 
-        let testDataRaw = fs.readFileSync(require.resolve('./keyblock3.json'), 'utf8');
+        let testDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock3.json'), 'utf8');
         blockData = JSON.parse(testDataRaw);
 
         blockHeader = {
