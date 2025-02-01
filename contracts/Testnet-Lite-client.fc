@@ -1,3 +1,4 @@
+;; Lite client for Testnet, to be deployed on Fastnet
 #include "imports/stdlib.fc";
 
 const op::new_key_block = 0x11a78ffe;
@@ -363,7 +364,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
         (block_data, int gen_utime) = load_block_data(block_data);
 
-        throw_unless(0xf022, (gen_utime >= utime_since) | (gen_utime < utime_until));
+        throw_unless(0xf022, (gen_utime >= utime_since) & (gen_utime < utime_until));
 
         (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
         slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();

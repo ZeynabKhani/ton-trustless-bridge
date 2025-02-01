@@ -145,24 +145,7 @@ export class LiteClient implements Contract {
         });
     }
 
-    static getInitialDataConfig(block: liteServer_BlockData) {
-        const data = Cell.fromBoc(Buffer.from(block.data))[0].beginParse();
-        data.loadUint(32);
-        data.loadInt(32); // global_id
-        const info = data.loadRef();
-        data.loadRef();
-        data.loadRef();
-        const extra = data.loadRef().beginParse();
-        extra.loadUint(32);
-        extra.loadRef();
-        extra.loadRef();
-        extra.loadRef();
-        extra.loadUintBig(256);
-        extra.loadUintBig(256); // created_by
-        const McBlockExtra = extra.loadRef().beginParse(); // or custom
-        McBlockExtra.loadUint(16); // magic cca5
-        const key_block = McBlockExtra.loadBit();
-
+    static getTestnetValidatorSet(McBlockExtra: Slice) {
         McBlockExtra.loadRef(); // shard_hashes
         McBlockExtra.loadRef(); // shard_fees
         McBlockExtra.loadRef(); // additional_info
@@ -181,43 +164,42 @@ export class LiteClient implements Contract {
         );
         let utime_since: number = 0;
         let utime_until: number = 0;
-        if (key_block) {
-            let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
-            McBlockExtra.loadBits(75); // not sure what this is
-            McBlockExtra.loadBits(256); // config_address
+        let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
+        // McBlockExtra.loadBits(75); // not sure what this is
+        // McBlockExtra.loadBits(256); // config_address
 
-            // loading current validator set
-            let configParam34 = configParamsCell.get(34)!.beginParse();
-            const type = configParam34.loadUint(8);
-            utime_since = configParam34.loadUint(32);
-            utime_until = configParam34.loadUint(32);
-            const total = configParam34.loadUint(16);
-            const main = configParam34.loadUint(16);
-            if (total! < main!) throw Error('data.total < data.main');
-            if (main! < 1) throw Error('data.main < 1');
-            if (type === 0x11) {
-                curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-                // console.log(type, utime_since, utime_until, total, main, list);
-            } else if (type === 0x12) {
-                // type = 'ext';
-                const total_weight = configParam34.loadUintBig(64);
-                curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-                // console.log(type, utime_since, utime_until, total, main, total_weight, list);
-            }
+        // loading current validator set
+        let configParam34 = configParamsCell.get(34)!.beginParse();
+        const type = configParam34.loadUint(8);
+        utime_since = configParam34.loadUint(32);
+        utime_until = configParam34.loadUint(32);
+        const total = configParam34.loadUint(16);
+        const main = configParam34.loadUint(16);
+        if (total! < main!) throw Error('data.total < data.main');
+        if (main! < 1) throw Error('data.main < 1');
+        if (type === 0x11) {
+            curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            // console.log(type, utime_since, utime_until, total, main, list);
+        } else if (type === 0x12) {
+            // type = 'ext';
+            const total_weight = configParam34.loadUintBig(64);
+            curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            // console.log(type, utime_since, utime_until, total, main, total_weight, list);
+        }
 
-            // loading previous validator set
-            let configParam32 = configParamsCell.get(32)!.beginParse();
-            configParam32.loadUintBig(8 + 32 + 32 + 16 + 16);
-            if (type === 0x11) {
-                prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-            } else if (type === 0x12) {
-                configParam32.loadUintBig(64);
-                prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-            }
+        // loading previous validator set
+        let configParam32 = configParamsCell.get(32)!.beginParse();
+        configParam32.loadUintBig(8 + 32 + 32 + 16 + 16);
+        if (type === 0x11) {
+            prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+        } else if (type === 0x12) {
+            configParam32.loadUintBig(64);
+            prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+        }
 
-            // loading next validator set
-            let configParam36 = configParamsCell.get(36)?.beginParse();
-            if (!configParam36) throw Error('configParam36 not found');
+        // loading next validator set
+        let configParam36 = configParamsCell.get(36)?.beginParse();
+        if (configParam36) {
             configParam36.loadUintBig(8 + 32 + 32 + 16 + 16);
             if (type === 0x11) {
                 nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
@@ -236,14 +218,107 @@ export class LiteClient implements Contract {
         };
     }
 
-    static async testBlockData(blockDataCell: Cell, signatures: ValidatorSignature[], message: Buffer) {
-        const testBlockDataCell = blockDataCell.beginParse();
-        testBlockDataCell.loadInt(32);
-        testBlockDataCell.loadRef();
-        const data = testBlockDataCell.loadRef().beginParse();
+    static getFastnetValidatorSet(McBlockExtra: Slice) {
+        McBlockExtra.loadRef(); // additional_info
+        McBlockExtra.loadUintBig(267); // config_address
+
+        let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
+        let utime_since: number = 0;
+        let utime_until: number = 0;
+        let total: number = 0;
+        let main: number = 0;
+
+        let curValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let prevValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let nextValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+
+        // Check if param 34 exists
+        const param34 = configParamsCell.get(34);
+        if (!param34) {
+            console.log('Config param 34 not found in fastnet');
+            return {
+                utime_since,
+                utime_until,
+                curValidatorSet,
+                prevValidatorSet,
+                nextValidatorSet,
+            };
+        }
+
+        let configParam34 = param34.beginParse();
+
+        const type = configParam34.loadUint(8);
+        utime_since = configParam34.loadUint(32);
+        utime_until = configParam34.loadUint(32);
+        total = configParam34.loadUint(16);
+        main = configParam34.loadUint(16);
+
+        if (type === 0x11) {
+            curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            // console.log(type, utime_since, utime_until, total, main, list);
+        } else if (type === 0x12) {
+            // type = 'ext';
+            const total_weight = configParam34.loadUintBig(64);
+            curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            // console.log(type, utime_since, utime_until, total, main, total_weight, list);
+        }
+
+        // loading previous validator set
+        let configParam32 = configParamsCell.get(32)!.beginParse();
+        configParam32.loadUintBig(8 + 32 + 32 + 16 + 16);
+        if (type === 0x11) {
+            prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+        } else if (type === 0x12) {
+            configParam32.loadUintBig(64);
+            prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+        }
+
+        // loading next validator set
+        let configParam36 = configParamsCell.get(36)?.beginParse();
+        if (configParam36) {
+            configParam36.loadUintBig(8 + 32 + 32 + 16 + 16);
+            if (type === 0x11) {
+                nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            } else if (type === 0x12) {
+                configParam36.loadUintBig(64);
+                nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            }
+        }
+
+        // console.log('utime_since', utime_since);
+        // console.log('utime_until', utime_until);
+        // console.log('prevValidatorSet', prevValidatorSet);
+        // console.log('curValidatorSet', curValidatorSet);
+        // console.log('nextValidatorSet', nextValidatorSet);
+
+        return {
+            curValidatorSet,
+            prevValidatorSet,
+            nextValidatorSet,
+            utime_since,
+            utime_until,
+        };
+    }
+
+    static getInitialDataConfig(block: liteServer_BlockData, workchain: number) {
+        const data = Cell.fromBoc(Buffer.from(block.data))[0].beginParse();
         data.loadUint(32);
         data.loadInt(32); // global_id
-        const info = data.loadRef();
+        const info = data.loadRef().beginParse();
+        info.loadUint(32);
+        info.loadUintBig(32 + 8 + 8 + 32 + 32);
+        info.loadUintBig(2 + 6 + 32 + 64);
+        const gen_utime = info.loadUint(32);
+        // console.log('gen_utime', gen_utime);
         data.loadRef();
         data.loadRef();
         const extra = data.loadRef().beginParse();
@@ -257,83 +332,155 @@ export class LiteClient implements Contract {
         McBlockExtra.loadUint(16); // magic cca5
         const key_block = McBlockExtra.loadBit();
 
-        McBlockExtra.loadRef(); // shard_hashes
-        McBlockExtra.loadRef(); // shard_fees
-        McBlockExtra.loadRef(); // additional_info
-
-        let validatorSet: Dictionary<number, ValidatorDescr> | null = null;
+        let curValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let prevValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let nextValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let utime_since: number = 0;
+        let utime_until: number = 0;
         if (key_block) {
-            let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
-            McBlockExtra.loadBits(75); // not sure what this is
-            McBlockExtra.loadBits(256); // config_address
-
-            let configParam34 = configParamsCell.get(34)!.beginParse();
-
-            const type = configParam34.loadUint(8);
-            if (type === 0x11) {
-                const utime_since = configParam34?.loadUint(32);
-                const utime_until = configParam34?.loadUint(32);
-                const total = configParam34?.loadUint(16);
-                const main = configParam34?.loadUint(16);
-                if (total! < main!) throw Error('data.total < data.main');
-                if (main! < 1) throw Error('data.main < 1');
-                validatorSet = configParam34?.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-                // console.log(type, utime_since, utime_until, total, main, list);
-            } else if (type === 0x12) {
-                // type = 'ext';
-                const utime_since = configParam34.loadUint(32);
-                const utime_until = configParam34.loadUint(32);
-                const total = configParam34.loadUint(16);
-                const main = configParam34.loadUint(16);
-                if (total! < main!) throw Error('data.total < data.main');
-                if (main! < 1) throw Error('data.main < 1');
-                const total_weight = configParam34.loadUintBig(64);
-                validatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-                // console.log(type, utime_since, utime_until, total, main, total_weight, list);
+            if (workchain == -1) {
+                const testnetValidatorSet = LiteClient.getTestnetValidatorSet(McBlockExtra);
+                curValidatorSet = testnetValidatorSet.curValidatorSet;
+                prevValidatorSet = testnetValidatorSet.prevValidatorSet;
+                nextValidatorSet = testnetValidatorSet.nextValidatorSet;
+                utime_since = testnetValidatorSet.utime_since;
+                utime_until = testnetValidatorSet.utime_until;
+            } else if (workchain == 0) {
+                const fastnetValidatorSet = LiteClient.getFastnetValidatorSet(McBlockExtra);
+                curValidatorSet = fastnetValidatorSet.curValidatorSet;
+                prevValidatorSet = fastnetValidatorSet.prevValidatorSet;
+                nextValidatorSet = fastnetValidatorSet.nextValidatorSet;
+                utime_since = fastnetValidatorSet.utime_since;
+                utime_until = fastnetValidatorSet.utime_until;
             }
-
-            let sumLargestTotalWeights = 0;
-            for (const [_, validator] of validatorSet!) {
-                sumLargestTotalWeights += Number(validator.weight);
-            }
-
-            let friendlyValidators: UserFriendlyValidator[] = [];
-            for (const entry of validatorSet!) {
-                // magic number prefix for a node id of a validator
-                const nodeIdPrefix = Buffer.from([0xc6, 0xb4, 0x13, 0x48]);
-                const pubkey = entry[1].public_key.pubkey;
-                // Convert BigInt pubkey to hex string, pad to 64 chars, then convert to Buffer
-                const pubkeyBuffer = Buffer.from(pubkey.toString(16).padStart(64, '0'), 'hex');
-                // Now concatenate the buffers
-                const nodeId = await sha256(Buffer.concat([nodeIdPrefix, pubkeyBuffer]));
-                friendlyValidators.push({
-                    ...entry[1],
-                    node_id: nodeId.toString('base64'),
-                    weight: entry[1].weight,
-                    pubkey,
-                });
-            }
-
-            let totalWeight = 0;
-            for (const item of signatures) {
-                for (const validator of friendlyValidators) {
-                    if (validator.node_id === item.node_id_short) {
-                        const key = pubkeyHexToEd25519DER(BigInt(validator.pubkey).toString(16).padStart(64, '0'));
-                        const verifyKey = crypto.createPublicKey({
-                            format: 'der',
-                            type: 'spki',
-                            key,
-                        });
-                        const result = crypto.verify(null, message, verifyKey, Buffer.from(item.signature, 'base64'));
-                        assert(result === true);
-                        totalWeight += Number(validator.weight);
-                    }
-                }
-            }
-            assert(totalWeight > 0);
-            assert(totalWeight * 3 > sumLargestTotalWeights * 2);
-            console.log('Masterchain block is verified successfully!');
         }
+
+        return {
+            curValidatorSet,
+            prevValidatorSet,
+            nextValidatorSet,
+            utime_since,
+            utime_until,
+        };
+    }
+
+    static async testBlockData(
+        blockDataCell: Cell,
+        signatures: ValidatorSignature[],
+        message: Buffer,
+        workchain: number,
+    ) {
+        const testBlockDataCell = blockDataCell.beginParse();
+        testBlockDataCell.loadInt(32);
+        testBlockDataCell.loadRef();
+        const data = testBlockDataCell.loadRef().beginParse();
+        data.loadUint(32);
+        data.loadInt(32); // global_id
+        const info = data.loadRef().beginParse();
+        info.loadUint(32);
+        info.loadUintBig(32 + 8 + 8 + 32 + 32);
+        info.loadUintBig(2 + 6 + 32 + 64);
+        const gen_utime = info.loadUint(32);
+        // console.log('gen_utime', gen_utime);
+        data.loadRef();
+        data.loadRef();
+        const extra = data.loadRef().beginParse();
+        extra.loadUint(32);
+        extra.loadRef();
+        extra.loadRef();
+        extra.loadRef();
+        extra.loadUintBig(256);
+        extra.loadUintBig(256); // created_by
+        const McBlockExtra = extra.loadRef().beginParse(); // or custom
+        McBlockExtra.loadUint(16); // magic cca5
+        const key_block = McBlockExtra.loadBit();
+
+        let curValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let prevValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let nextValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+            Dictionary.Keys.Uint(16),
+            ValidatorDescrValue(),
+        );
+        let utime_since: number = 0;
+        let utime_until: number = 0;
+        if (key_block) {
+            if (workchain == -1) {
+                const testnetValidatorSet = LiteClient.getTestnetValidatorSet(McBlockExtra);
+                curValidatorSet = testnetValidatorSet.curValidatorSet;
+                prevValidatorSet = testnetValidatorSet.prevValidatorSet;
+                nextValidatorSet = testnetValidatorSet.nextValidatorSet;
+                utime_since = testnetValidatorSet.utime_since;
+                utime_until = testnetValidatorSet.utime_until;
+            } else if (workchain == 0) {
+                const fastnetValidatorSet = LiteClient.getFastnetValidatorSet(McBlockExtra);
+                curValidatorSet = fastnetValidatorSet.curValidatorSet;
+                prevValidatorSet = fastnetValidatorSet.prevValidatorSet;
+                nextValidatorSet = fastnetValidatorSet.nextValidatorSet;
+                utime_since = fastnetValidatorSet.utime_since;
+                utime_until = fastnetValidatorSet.utime_until;
+            }
+        }
+
+        // let validatorSet: Dictionary<number, ValidatorDescr> | null = null;
+        // if (key_block) {
+
+        //     let sumLargestTotalWeights = 0;
+        //     for (const [_, validator] of validatorSet!) {
+        //         sumLargestTotalWeights += Number(validator.weight);
+        //     }
+
+        //     let friendlyValidators: UserFriendlyValidator[] = [];
+        //     for (const entry of validatorSet!) {
+        //         // magic number prefix for a node id of a validator
+        //         const nodeIdPrefix = Buffer.from([0xc6, 0xb4, 0x13, 0x48]);
+        //         const pubkey = entry[1].public_key.pubkey;
+        //         // Convert BigInt pubkey to hex string, pad to 64 chars, then convert to Buffer
+        //         const pubkeyBuffer = Buffer.from(pubkey.toString(16).padStart(64, '0'), 'hex');
+        //         // Now concatenate the buffers
+        //         const nodeId = await sha256(Buffer.concat([nodeIdPrefix, pubkeyBuffer]));
+        //         friendlyValidators.push({
+        //             ...entry[1],
+        //             node_id: nodeId.toString('base64'),
+        //             weight: entry[1].weight,
+        //             pubkey,
+        //         });
+        //     }
+
+        //     let totalWeight = 0;
+        //     for (const item of signatures) {
+        //         for (const validator of friendlyValidators) {
+        //             if (validator.node_id === item.node_id_short) {
+        //                 const key = pubkeyHexToEd25519DER(BigInt(validator.pubkey).toString(16).padStart(64, '0'));
+        //                 const verifyKey = crypto.createPublicKey({
+        //                     format: 'der',
+        //                     type: 'spki',
+        //                     key,
+        //                 });
+        //                 const result = crypto.verify(null, message, verifyKey, Buffer.from(item.signature, 'base64'));
+        //                 assert(result === true);
+        //                 totalWeight += Number(validator.weight);
+        //             }
+        //         }
+        //     }
+        //     assert(totalWeight > 0);
+        //     assert(totalWeight * 3 > sumLargestTotalWeights * 2);
+        //     console.log('Masterchain block is verified successfully!');
+        // }
     }
 
     async sendNewKeyBlock(
@@ -342,6 +489,7 @@ export class LiteClient implements Contract {
         blockHeader: liteServer_blockHeader,
         block: liteServer_BlockData,
         signatures: ValidatorSignature[],
+        workchain: number,
     ) {
         const blockHeaderIdCell = beginCell()
             .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
@@ -372,13 +520,13 @@ export class LiteClient implements Contract {
             .storeRef(Cell.fromBoc(Buffer.from(block.data))[0])
             .endCell();
 
-        // const message = Buffer.concat([
-        //     // magic prefix of message signing
-        //     Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
-        //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
-        //     Buffer.from(blockHeader.id.fileHash),
-        // ]);
-        // LiteClient.testBlockData(blockDataCell, signatures, message); // console.log('works for 27533522');
+        const message = Buffer.concat([
+            // magic prefix of message signing
+            Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
+            Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
+            Buffer.from(blockHeader.id.fileHash),
+        ]);
+        LiteClient.testBlockData(blockDataCell, signatures, message, workchain); // console.log('works for 27533522');
 
         const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
         let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
