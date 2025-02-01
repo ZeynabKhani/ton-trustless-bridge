@@ -4,9 +4,10 @@ import { compile, NetworkProvider } from '@ton/blueprint';
 import fs from 'fs';
 
 export async function run(provider: NetworkProvider) {
-    const liteClientCode = await compile('LiteClient');
+    const liteClientCode = await compile('FastnetLiteClient');
+    const workchain = 0;
 
-    const initialDataRaw = fs.readFileSync(require.resolve('./keyblock1.json'), 'utf8');
+    const initialDataRaw = fs.readFileSync(require.resolve('../../tests/fastnet/keyblock1.json'), 'utf8');
     let initialData = JSON.parse(initialDataRaw);
 
     let initialBlock = {
@@ -16,7 +17,7 @@ export async function run(provider: NetworkProvider) {
     };
 
     const { curValidatorSet, prevValidatorSet, nextValidatorSet, utime_since, utime_until } =
-        LiteClient.getInitialDataConfig(initialBlock);
+        LiteClient.getInitialDataConfig(initialBlock, workchain);
 
     let liteClient = provider.open(
         LiteClient.createFromConfig(
@@ -28,15 +29,15 @@ export async function run(provider: NetworkProvider) {
                 utime_until,
             },
             liteClientCode,
-            0,
+            workchain,
         ),
     );
 
-    await liteClient.sendDeploy(provider.sender(), toNano('0.05'));
+    // await liteClient.sendDeploy(provider.sender(), toNano('0.05'));
 
-    await provider.waitForDeploy(liteClient.address);
+    // await provider.waitForDeploy(liteClient.address);
 
-    const testDataRaw = fs.readFileSync(require.resolve('./keyblock2.json'), 'utf8');
+    let testDataRaw = fs.readFileSync(require.resolve('../../tests/fastnet/keyblock2.json'), 'utf8');
     let blockData = JSON.parse(testDataRaw);
 
     let blockHeader = {
@@ -51,4 +52,43 @@ export async function run(provider: NetworkProvider) {
         data: blockData.block.data,
     };
     let signatures = blockData.signatures;
+    // await liteClient.sendNewKeyBlock(provider.sender(), blockHeader, block, signatures, workchain, toNano('0.05'));
+
+    testDataRaw = fs.readFileSync(require.resolve('../../tests/fastnet/keyblock3.json'), 'utf8');
+    blockData = JSON.parse(testDataRaw);
+
+    blockHeader = {
+        kind: blockData.header.kind,
+        id: blockData.header.id,
+        mode: blockData.header.mode,
+        headerProof: blockData.header.headerProof,
+    };
+    block = {
+        kind: blockData.block.kind,
+        id: blockData.block.id,
+        data: blockData.block.data,
+    };
+    signatures = blockData.signatures;
+
+    // await liteClient.sendCheckBlock(provider.sender(), blockHeader, block, signatures, toNano('0.05'));
+    // await liteClient.sendNewKeyBlock(provider.sender(), blockHeader, block, signatures, workchain, toNano('0.05'));
+
+    testDataRaw = fs.readFileSync(require.resolve('../../tests/fastnet/keyblock4.json'), 'utf8');
+    blockData = JSON.parse(testDataRaw);
+
+    blockHeader = {
+        kind: blockData.header.kind,
+        id: blockData.header.id,
+        mode: blockData.header.mode,
+        headerProof: blockData.header.headerProof,
+    };
+    block = {
+        kind: blockData.block.kind,
+        id: blockData.block.id,
+        data: blockData.block.data,
+    };
+    signatures = blockData.signatures;
+
+    // await liteClient.sendNewKeyBlock(provider.sender(), blockHeader, block, signatures, workchain, toNano('0.05'));
+    // https://testnet.tonviewer.com/kQCQhihl9a4EVhWU7gZNU5_QxaZ1sBwKw9R_40_evxjfzx3T
 }

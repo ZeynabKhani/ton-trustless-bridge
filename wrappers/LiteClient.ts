@@ -490,6 +490,7 @@ export class LiteClient implements Contract {
         block: liteServer_BlockData,
         signatures: ValidatorSignature[],
         workchain: number,
+        value: bigint,
     ) {
         const blockHeaderIdCell = beginCell()
             .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
@@ -548,7 +549,7 @@ export class LiteClient implements Contract {
                 .storeRef(blockCell)
                 .storeDict(signaturesCell)
                 .endCell(),
-            value: toNano('0.05'),
+            value: value,
         });
     }
 
@@ -558,6 +559,7 @@ export class LiteClient implements Contract {
         blockHeader: liteServer_blockHeader,
         block: liteServer_BlockData,
         signatures: ValidatorSignature[],
+        value: bigint,
     ) {
         const blockHeaderIdCell = beginCell()
             .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
@@ -616,7 +618,17 @@ export class LiteClient implements Contract {
                 .storeRef(blockCell)
                 .storeDict(signaturesCell)
                 .endCell(),
-            value: toNano('0.05'),
+            value: value,
         });
+    }
+
+    async getUtimeSince(provider: ContractProvider) {
+        const res = await provider.get('get_utime_since', []);
+        return res.stack.readNumber();
+    }
+
+    async getUtimeUntil(provider: ContractProvider) {
+        const res = await provider.get('get_utime_until', []);
+        return res.stack.readNumber();
     }
 }
