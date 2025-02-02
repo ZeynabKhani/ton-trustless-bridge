@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import { sleep } from '@ton/blueprint';
 import { loadBlockExtra } from '@oraichain/tonbridge-utils/build/blockchain/BlockParser';
 import { compile, NetworkProvider } from '@ton/blueprint';
-import { BlockID } from '../ton-lite-client/dist';
+import { BlockID } from '../../ton-lite-client/dist';
 
 export function intToIP(int: number) {
     var part1 = int & 255;
@@ -33,7 +33,7 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
     return parsedBlock;
 }
 
-export async function run(provider: NetworkProvider) {
+(async () => {
     const jsonData = fs.readFileSync(require.resolve('./testnet-global-config.json'), 'utf8');
     const data = JSON.parse(jsonData);
 
@@ -55,7 +55,7 @@ export async function run(provider: NetworkProvider) {
 
     let existingData = {};
 
-    const initialDataRaw = fs.readFileSync(require.resolve('../tests/keyblock2.json'), 'utf8');
+    const initialDataRaw = fs.readFileSync(require.resolve('../../tests/testnet/keyblock2.json'), 'utf8');
     let initialData = JSON.parse(initialDataRaw);
     let blockInfo : BlockID = initialData.header.id;
     blockInfo.rootHash = Buffer.from(blockInfo.rootHash)
@@ -83,85 +83,86 @@ export async function run(provider: NetworkProvider) {
     for (let tx of txs) {
         // console.log(Buffer.from(tx.blockId.rootHash).toString('hex'))
         // console.log(Buffer.from(initialData.header.id.rootHash).toString('hex'))
-        if (Buffer.from(tx.blockId.rootHash).toString('hex') == Buffer.from(initialData.header.id.rootHash).toString('hex')) {
-            console.log(tx)
-            if (tx.blockId.workchain !== -1) {
-                throw new Error('Transaction is in a shard block');
-            } else {
-                // This is like Additional check for rootHash in parseBlock
-                const blockHeader = await client.getBlockHeader(tx.blockId);
-                const headerData = {
-                    header: {
-                        id: blockHeader.id,
-                        headerProof: blockHeader.headerProof,
-                        mode: blockHeader.mode,
-                    },
-                    roothash: blockHeader.id.rootHash.toString('hex'),
-                };
-                let existingData = {};
-                if (fs.existsSync('tests/blockForTx.json')) {
-                    existingData = JSON.parse(fs.readFileSync('tests/blockForTx.json', 'utf8'));
-                }
-                const mergedData = { ...existingData, ...headerData };
-                fs.writeFileSync('tests/blockForTx.json', JSON.stringify(mergedData, null, 2));
-                console.log('Block header written to tests/blockForTx.json');
+        
+            // if (tx.blockId.workchain !== -1) {
+            //     throw new Error('Transaction is in a shard block');
+            // } else {
+            //     // This is like Additional check for rootHash in parseBlock
+            //     const blockHeader = await client.getBlockHeader(tx.blockId);
+            //     const headerData = {
+            //         header: {
+            //             id: blockHeader.id,
+            //             headerProof: blockHeader.headerProof,
+            //             mode: blockHeader.mode,
+            //         },
+            //         roothash: blockHeader.id.rootHash.toString('hex'),
+            //     };
+            //     let existingData = {};
+            //     if (fs.existsSync('tests/testnet/blockForTx.json')) {
+            //         existingData = JSON.parse(fs.readFileSync('tests/testnet/blockForTx.json', 'utf8'));
+            //     }
+            //     const mergedData = { ...existingData, ...headerData };
+            //     fs.writeFileSync('tests/testnet/blockForTx.json', JSON.stringify(mergedData, null, 2));
+            //     console.log('Block header written to tests/testnet/blockForTx.json');
                 
-                const tonweb = new TonWeb(
-                    new TonWeb.HttpProvider('https://testnet.toncenter.com/api/v2/jsonRPC', {
-                        apiKey: process.env.apiKey,
-                    }),
-                );
-                try {
-                    const valSignatures = (await tonweb.provider.send('getMasterchainBlockSignatures', {
-                        seqno: tx.blockId.seqno,
-                    })) as any;
-                    const signatures = valSignatures.signatures as ValidatorSignature[];
+            //     const tonweb = new TonWeb(
+            //         new TonWeb.HttpProvider('https://testnet.toncenter.com/api/v2/jsonRPC', {
+            //             apiKey: process.env.apiKey,
+            //         }),
+            //     );
+            //     try {
+            //         const valSignatures = (await tonweb.provider.send('getMasterchainBlockSignatures', {
+            //             seqno: tx.blockId.seqno,
+            //         })) as any;
+            //         const signatures = valSignatures.signatures as ValidatorSignature[];
     
-                    const signaturesData = {
-                        signatures: signatures,
-                    };
-                    if (fs.existsSync('tests/blockForTx.json')) {
-                        existingData = JSON.parse(fs.readFileSync('tests/blockForTx.json', 'utf8'));
-                    }
-                    const mergedData = { ...existingData, ...signaturesData };
-                    fs.writeFileSync('tests/blockForTx.json', JSON.stringify(mergedData, null, 2));
-                    console.log('Signatures written to tests/blockForTx.json');
-                } catch (error) {
-                    console.error('Error fetching block signatures:', error);
-                    throw error;
-                }
+            //         const signaturesData = {
+            //             signatures: signatures,
+            //         };
+            //         if (fs.existsSync('tests/testnet/blockForTx.json')) {
+            //             existingData = JSON.parse(fs.readFileSync('tests/testnet/blockForTx.json', 'utf8'));
+            //         }
+            //         const mergedData = { ...existingData, ...signaturesData };
+            //         fs.writeFileSync('tests/testnet/blockForTx.json', JSON.stringify(mergedData, null, 2));
+            //         console.log('Signatures written to tests/testnet/blockForTx.json');
+            //     } catch (error) {
+            //         console.error('Error fetching block signatures:', error);
+            //         throw error;
+            //     }
     
-                let blockInfo = master.last;
+            //     let blockInfo = master.last;
     
-                const block = await engine.query(Functions.liteServer_getBlock, {
-                    kind: 'liteServer.getBlock',
-                    id: blockInfo,
-                });
+            //     const block = await engine.query(Functions.liteServer_getBlock, {
+            //         kind: 'liteServer.getBlock',
+            //         id: blockInfo,
+            //     });
                 
-                try {
-                    const blockData = {
-                        block: {
-                            kind: block.kind,
-                            id: block.id,
-                            data: block.data,
-                        },
-                    };
-                    if (fs.existsSync('tests/blockForTx.json')) {
-                        existingData = JSON.parse(fs.readFileSync('tests/blockForTx.json', 'utf8'));
-                    }
-                    const mergedData = { ...existingData, ...blockData };
-                    fs.writeFileSync('tests/blockForTx.json', JSON.stringify(mergedData, null, 2));
-                    console.log('Block data written to tests/blockForTx.json');
-                } catch (error) {
-                    console.error('Error accessing block config:', error);
-                }
-            }
+            //     try {
+            //         const blockData = {
+            //             block: {
+            //                 kind: block.kind,
+            //                 id: block.id,
+            //                 data: block.data,
+            //             },
+            //         };
+            //         if (fs.existsSync('tests/testnet/blockForTx.json')) {
+            //             existingData = JSON.parse(fs.readFileSync('tests/testnet/blockForTx.json', 'utf8'));
+            //         }
+            //         const mergedData = { ...existingData, ...blockData };
+            //         fs.writeFileSync('tests/testnet/blockForTx.json', JSON.stringify(mergedData, null, 2));
+            //         console.log('Block data written to tests/testnet/blockForTx.json');
+            //     } catch (error) {
+            //         console.error('Error accessing block config:', error);
+            //     }
+            // }
     
             // Query the transaction proof
-            const txWithProof = await client.getAccountTransaction(addr, tx.tx.lt.toString(10), tx.blockId);
+        const txWithProof = await client.getAccountTransaction(addr, tx.tx.lt.toString(10), tx.blockId);
+        if (txWithProof.id.seqno == initialData.header.id.seqno) {
+            console.log(tx)
             existingData = {};
-            if (fs.existsSync('tests/txData.json')) {
-                existingData = JSON.parse(fs.readFileSync('tests/txData.json', 'utf8'));
+            if (fs.existsSync('tests/testnet/txData.json')) {
+                existingData = JSON.parse(fs.readFileSync('tests/testnet/txData.json', 'utf8'));
             }
     
             const txProof = await TonRocks.types.Cell.fromBoc(txWithProof.proof);
@@ -179,11 +180,11 @@ export async function run(provider: NetworkProvider) {
             };
     
             const mergedData = { ...existingData, ...txData };
-            fs.writeFileSync('tests/txData.json', JSON.stringify(mergedData, null, 2));
-            console.log('tx with proof written to tests/txData.json');
+            fs.writeFileSync('tests/testnet/txData.json', JSON.stringify(mergedData, null, 2));
+            console.log('tx with proof written to tests/testnet/txData.json');
         }
     }
 
     engine.close();
 
-}
+})();

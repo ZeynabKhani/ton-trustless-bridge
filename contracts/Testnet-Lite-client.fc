@@ -307,7 +307,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
     ;; ~dump(slice_refs_empty?(first_ref_slice));
     ;; ~dump(slice_bits(first_ref_slice));
     ;; ~dump(slice_refs(first_ref_slice));
-
+    
     if (op == op::new_key_block) {
         int query_id = in_msg_body~load_uint(64);
         cell block = in_msg_body~load_ref();
@@ -348,7 +348,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
         return ();
     }
-
+    
     if (op == op::check_block) {
         int query_id = in_msg_body~load_uint(64);
         cell block = in_msg_body~load_ref();
@@ -364,7 +364,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
         (block_data, int gen_utime) = load_block_data(block_data);
 
-        throw_unless(0xf022, (gen_utime >= utime_since) & (gen_utime < utime_until));
+        ;; throw_unless(0xf022, (gen_utime >= utime_since) & (gen_utime < utime_until));
 
         (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
         slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();

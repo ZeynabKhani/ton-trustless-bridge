@@ -74,21 +74,21 @@ export class TransactionChecker implements Contract {
                 .storeRef(proof) // proof
                 .storeRef(current_block)
                 .endCell(),
-            value: toNano('0.05'),
+            value: toNano('0.5'),
         });
     }
 
     create_signature_cell = (signatures: ValidatorSignature[]) => {
         let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
-            for (const item of signatures) {
-                const signature = Buffer.from(item.signature, 'base64').toString('hex');
-                const signaturePart1 = BigInt('0x' + signature.substring(0, 64));
-                const signaturePart2 = BigInt('0x' + signature.substring(64));
-                signaturesCell.set(
-                    BigInt('0x' + Buffer.from(item.node_id_short, 'base64').toString('hex')),
-                    beginCell().storeUint(signaturePart1, 256).storeUint(signaturePart2, 256).endCell(),
-                );
-            }
+        for (const item of signatures) {
+            const signature = Buffer.from(item.signature, 'base64').toString('hex');
+            const signaturePart1 = BigInt('0x' + signature.substring(0, 64));
+            const signaturePart2 = BigInt('0x' + signature.substring(64));
+            signaturesCell.set(
+                BigInt('0x' + Buffer.from(item.node_id_short, 'base64').toString('hex')),
+                beginCell().storeUint(signaturePart1, 256).storeUint(signaturePart2, 256).endCell(),
+            );
+        }
         return signaturesCell
     }
 
@@ -150,7 +150,7 @@ export class TransactionChecker implements Contract {
         via: Sender,
     ) {
         await provider.internal(via, {
-            value: toNano('0.05'),
+            value: toNano('0.5'),
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell().storeUint(Op.correct, 32).storeUint(0, 64).storeRef(beginCell().endCell()).endCell(),
         });
@@ -161,7 +161,7 @@ export class TransactionChecker implements Contract {
         via: Sender,
     ) {
         await provider.internal(via, {
-            value: toNano('0.05'),
+            value: toNano('0.5'),
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell().storeUint(Op.reject, 32).storeUint(0, 64).storeRef(beginCell().endCell()).endCell(),
         });
