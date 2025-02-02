@@ -483,14 +483,11 @@ export class LiteClient implements Contract {
         // }
     }
 
-    async sendNewKeyBlock(
-        provider: ContractProvider,
-        via: Sender,
+    static newKeyBlockMessage(
         blockHeader: liteServer_blockHeader,
         block: liteServer_BlockData,
         signatures: ValidatorSignature[],
         workchain: number,
-        value: bigint,
     ) {
         const blockHeaderIdCell = beginCell()
             .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
@@ -527,7 +524,7 @@ export class LiteClient implements Contract {
             Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
             Buffer.from(blockHeader.id.fileHash),
         ]);
-        LiteClient.testBlockData(blockDataCell, signatures, message, workchain); // console.log('works for 27533522');
+        LiteClient.testBlockData(blockDataCell, signatures, message, workchain);
 
         const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
         let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
@@ -541,25 +538,36 @@ export class LiteClient implements Contract {
             );
         }
 
-        await provider.internal(via, {
-            sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell()
-                .storeUint(Op.new_key_block, 32)
-                .storeUint(0, 64)
-                .storeRef(blockCell)
-                .storeDict(signaturesCell)
-                .endCell(),
-            value: value,
-        });
+        const messageBody = beginCell()
+            .storeUint(Op.new_key_block, 32)
+            .storeUint(0, 64)
+            .storeRef(blockCell)
+            .storeDict(signaturesCell)
+            .endCell();
+
+        return messageBody;
     }
 
-    async sendCheckBlock(
+    async sendNewKeyBlock(
         provider: ContractProvider,
         via: Sender,
         blockHeader: liteServer_blockHeader,
         block: liteServer_BlockData,
         signatures: ValidatorSignature[],
+        workchain: number,
         value: bigint,
+    ) {
+        await provider.internal(via, {
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: LiteClient.newKeyBlockMessage(blockHeader, block, signatures, workchain),
+            value: value,
+        });
+    }
+
+    static checkBlockMessage(
+        blockHeader: liteServer_blockHeader,
+        block: liteServer_BlockData,
+        signatures: ValidatorSignature[],
     ) {
         const blockHeaderIdCell = beginCell()
             .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
@@ -596,7 +604,7 @@ export class LiteClient implements Contract {
         //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
         //     Buffer.from(blockHeader.id.fileHash),
         // ]);
-        // LiteClient.testBlockData(blockDataCell, signatures, message); // console.log('works for 27533522');
+        // LiteClient.testBlockData(blockDataCell, signatures, message);
 
         const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
         let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
@@ -610,14 +618,26 @@ export class LiteClient implements Contract {
             );
         }
 
+        const messageBody = beginCell()
+            .storeUint(Op.check_block, 32)
+            .storeUint(0, 64)
+            .storeRef(blockCell)
+            .storeDict(signaturesCell)
+            .endCell();
+        return messageBody;
+    }
+
+    async sendCheckBlock(
+        provider: ContractProvider,
+        via: Sender,
+        blockHeader: liteServer_blockHeader,
+        block: liteServer_BlockData,
+        signatures: ValidatorSignature[],
+        value: bigint,
+    ) {
         await provider.internal(via, {
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: beginCell()
-                .storeUint(Op.check_block, 32)
-                .storeUint(0, 64)
-                .storeRef(blockCell)
-                .storeDict(signaturesCell)
-                .endCell(),
+            body: LiteClient.checkBlockMessage(blockHeader, block, signatures),
             value: value,
         });
     }
