@@ -119,6 +119,7 @@ export class TransactionChecker implements Contract {
     };
 
     static checkTransactionMessage(
+        txHash: any,
         txWithProof: any,
         blockHeader: liteServer_blockHeader,
         block: liteServer_BlockData,
@@ -133,7 +134,7 @@ export class TransactionChecker implements Contract {
         const message = beginCell()
             .storeUint(Op.check_transaction, 32)
             .storeUint(0, 64)
-            .storeRef(beginCell().endCell()) //transaction todo put txhash and account block
+            .storeRef(beginCell().storeUint(BigInt('0x' + txHash.toString()), 256).endCell()) //transaction todo put txhash and account block
             .storeRef(proof) // proof
             .storeRef(current_block)
             .endCell();
@@ -143,6 +144,7 @@ export class TransactionChecker implements Contract {
     async sendCheckTransaction(
         provider: ContractProvider,
         via: Sender,
+        txhash: any,
         txWithProof: any,
         blockHeader: liteServer_blockHeader,
         block: liteServer_BlockData,
@@ -152,7 +154,7 @@ export class TransactionChecker implements Contract {
     ) {
         await provider.internal(via, {
             sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: TransactionChecker.checkTransactionMessage(txWithProof, blockHeader, block, signatures),
+            body: TransactionChecker.checkTransactionMessage(txhash, txWithProof, blockHeader, block, signatures),
             value: value,
         });
     }

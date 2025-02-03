@@ -9,6 +9,7 @@ const error::unknown_opcode = 0xffff;
 const error::inconsistent_proof = 0xfff1;
 const error::unauthorized = 0xfff2;
 const error::transaction_not_found = 0xfff3;
+const error::transaction_not_in_block = 0xfff4;
 
 
 (slice, int) parse_exotic(cell x) asm "XCTOS";
@@ -123,25 +124,59 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
         int proof_root_hash = hash_at_level(first_proof_ref, 0);
 
         proof_slice~load_uint(8); ;;skip cell type
-
+        
         throw_unless(error::inconsistent_proof, proof_root_hash == proof_slice~load_uint(256));
         throw_unless(error::inconsistent_proof, proof_root_hash == block_root_hash);
+        
+        ;; check tx hash in proof
 
-        ;; TODO check tx hash in proof
+        slice transaction_cs = transaction.begin_parse();
+        int tx_hash = transaction_cs~load_uint(256);
+
         slice first_proof_ref_cs = first_proof_ref.begin_parse();
         first_proof_ref_cs~load_ref(); ;; skip ref 0
         first_proof_ref_cs~load_ref(); ;; skip ref 1
         first_proof_ref_cs~load_ref(); ;; skip ref 2
         cell block_extra = first_proof_ref_cs~load_ref(); ;; block extra 
         slice block_extra_cs = block_extra.begin_parse();
-        block_extra_cs~load_uint(32);
         block_extra_cs~load_ref();
         block_extra_cs~load_ref();
+
         cell account_blocks = block_extra_cs~load_ref();
-
-        slice transaction_cs = transaction.begin_parse();
-        cell tx_hash = transaction_cs~load_ref();
-
+        slice account_blocks_cs = account_blocks.begin_parse();
+        cell ref0 = account_blocks_cs~load_ref();
+        slice ref0_cs = ref0.begin_parse();
+        while (ref0_cs.slice_bits() < 100) {
+            ref0 = ref0_cs~load_ref();
+            try {
+                ref0_cs = ref0.begin_parse();
+            } catch (x, n) {
+                ref0 = ref0_cs~load_ref();
+                ref0_cs = ref0.begin_parse();
+            }
+        }
+        int flag = 0;
+        while (ref0_cs.slice_refs_empty?() != -1) {
+            try {
+                cell next_cell = ref0_cs~load_ref();
+                (slice ref1, int is_exotic) = parse_exotic(next_cell);
+                while (is_exotic == 0) {
+                    if (ref1.slice_refs_empty?() != -1) {
+                        next_cell = ref1~load_ref();
+                        (ref1, is_exotic) = parse_exotic(next_cell);
+                    } else {
+                        is_exotic = -1;
+                    }
+                }
+                ref1~skip_bits(16);
+                if (ref1~load_uint(256) == tx_hash) {
+                    flag = 1;
+                }
+            } catch (x, n) {
+                ref0_cs~load_ref();
+            }
+        }
+        throw_unless(error::transaction_not_in_block, flag == 1);
         check_transaction_requests~udict_set_ref(64, query_id, begin_cell().store_slice(sender_address).store_ref(transaction).end_cell()); ;; store sender address for this query id
 
         ;; query lite client to check block
