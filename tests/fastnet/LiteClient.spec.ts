@@ -39,22 +39,6 @@ describe('LiteClient', () => {
             data: initialData.block.data,
         };
 
-        const testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock2.json'), 'utf8');
-        blockData = JSON.parse(testDataRaw);
-
-        blockHeader = {
-            kind: blockData.header.kind,
-            id: blockData.header.id,
-            mode: blockData.header.mode,
-            headerProof: blockData.header.headerProof,
-        };
-        block = {
-            kind: blockData.block.kind,
-            id: blockData.block.id,
-            data: blockData.block.data,
-        };
-        signatures = blockData.signatures;
-
         const { curValidatorSet, prevValidatorSet, nextValidatorSet, utime_since, utime_until } =
             LiteClient.getInitialDataConfig(initialBlock, workchain);
 
@@ -66,6 +50,7 @@ describe('LiteClient', () => {
                     next_validator_set: nextValidatorSet,
                     utime_since,
                     utime_until,
+                    seqno: initialBlock.id.seqno,
                 },
                 code,
                 workchain,
@@ -84,7 +69,22 @@ describe('LiteClient', () => {
         });
     });
 
-    it('should set three new key blocks', async () => {
+    it('should set an already existing key block', async () => {
+        let testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock1.json'), 'utf8');
+        blockData = JSON.parse(testDataRaw);
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = blockData.signatures;
         let result = await liteClient.sendNewKeyBlock(
             deployer.getSender(),
             blockHeader,
@@ -93,7 +93,70 @@ describe('LiteClient', () => {
             workchain,
             toNano('1.5'),
         );
+        expect(result.transactions).toHaveTransaction({
+            from: liteClient.address,
+            to: deployer.address,
+            success: true,
+            op: Op.ok,
+        });
+    });
 
+    it('should check a transitioning key block', async () => {
+        let testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock1.json'), 'utf8');
+        blockData = JSON.parse(testDataRaw);
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = blockData.signatures;
+
+        let result = await liteClient.sendCheckBlock(
+            deployer.getSender(),
+            blockHeader,
+            block,
+            signatures,
+            toNano('1.5'),
+        );
+        expect(result.transactions).toHaveTransaction({
+            from: liteClient.address,
+            to: deployer.address,
+            success: true,
+            op: Op.correct,
+        });
+    });
+
+    it('should check a key block that starts a new epoch', async () => {
+        const testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock2.json'), 'utf8');
+        blockData = JSON.parse(testDataRaw);
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = blockData.signatures;
+        let result = await liteClient.sendNewKeyBlock(
+            deployer.getSender(),
+            blockHeader,
+            block,
+            signatures,
+            workchain,
+            toNano('1.5'),
+        );
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
             to: deployer.address,
@@ -101,7 +164,47 @@ describe('LiteClient', () => {
             op: Op.ok,
         });
 
-        let testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock3.json'), 'utf8');
+        result = await liteClient.sendCheckBlock(deployer.getSender(), blockHeader, block, signatures, toNano('1.5'));
+        expect(result.transactions).toHaveTransaction({
+            from: liteClient.address,
+            to: deployer.address,
+            success: true,
+            op: Op.correct,
+        });
+    });
+
+    it('should set three new key blocks', async () => {
+        let testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock2.json'), 'utf8');
+        blockData = JSON.parse(testDataRaw);
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = blockData.signatures;
+        let result = await liteClient.sendNewKeyBlock(
+            deployer.getSender(),
+            blockHeader,
+            block,
+            signatures,
+            workchain,
+            toNano('1.5'),
+        );
+        expect(result.transactions).toHaveTransaction({
+            from: liteClient.address,
+            to: deployer.address,
+            success: true,
+            op: Op.ok,
+        });
+
+        testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock3.json'), 'utf8');
         blockData = JSON.parse(testDataRaw);
 
         blockHeader = {
@@ -164,7 +267,22 @@ describe('LiteClient', () => {
         });
     });
 
-    it('should check a block', async () => {
+    it('should set a key block and check the next key block', async () => {
+        let testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock2.json'), 'utf8');
+        blockData = JSON.parse(testDataRaw);
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = blockData.signatures;
         let result = await liteClient.sendNewKeyBlock(
             deployer.getSender(),
             blockHeader,
@@ -180,7 +298,7 @@ describe('LiteClient', () => {
             op: Op.ok,
         });
 
-        let testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock3.json'), 'utf8');
+        testDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock3.json'), 'utf8');
         blockData = JSON.parse(testDataRaw);
 
         blockHeader = {

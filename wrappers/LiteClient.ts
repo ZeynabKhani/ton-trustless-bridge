@@ -17,10 +17,10 @@ import crypto from 'crypto';
 import { Op } from './Constants';
 import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
 import { liteServer_blockHeader } from 'ton-lite-client/dist/schema';
-import TonRocks, { pubkeyHexToEd25519DER } from '@oraichain/tonbridge-utils';
+import { pubkeyHexToEd25519DER } from '@oraichain/tonbridge-utils';
 import { assert } from 'node:console';
 import { sha256 } from '@ton/crypto';
-import { BitString, ValidatorSignature } from '@oraichain/tonbridge-utils/build/types';
+import { ValidatorSignature } from '@oraichain/tonbridge-utils/build/types';
 
 export type LiteClientConfig = {
     prev_validator_set: Dictionary<number, ValidatorDescr>;
@@ -28,6 +28,7 @@ export type LiteClientConfig = {
     next_validator_set: Dictionary<number, ValidatorDescr>;
     utime_since: number;
     utime_until: number;
+    seqno: number;
 };
 
 export function liteClientConfigToCell(config: LiteClientConfig): Cell {
@@ -37,6 +38,7 @@ export function liteClientConfigToCell(config: LiteClientConfig): Cell {
         .storeDict(config.next_validator_set)
         .storeUint(config.utime_since, 32)
         .storeUint(config.utime_until, 32)
+        .storeInt(config.seqno, 32)
         .endCell();
 }
 
@@ -63,30 +65,6 @@ function loadSigPubKey(s: Slice): SigPubKey {
     if (s.loadUint(32) !== 0x8e81278a) throw Error('not a SigPubKey');
     data.pubkey = s.loadUintBig(256);
     return data;
-}
-
-function loadValidatorDescr(s: Slice): ValidatorDescr | null {
-    let data: ValidatorDescr = {
-        _: 'ValidatorDescr',
-        type: 'sig_pubkey',
-        public_key: { _: 'SigPubKey', pubkey: BigInt(0) },
-        weight: BigInt(0),
-    };
-
-    let type = s.loadUint(8);
-    if (type === 0x53) {
-        data.type = 'sig_pubkey';
-        data.public_key = loadSigPubKey(s);
-        data.weight = s.loadUintBig(64);
-        return data;
-    } else if (type === 0x73) {
-        data.type = 'addr';
-        data.public_key = loadSigPubKey(s);
-        data.weight = s.loadUintBig(64);
-        data.adnl_addr = s.loadUintBig(256);
-        return data;
-    }
-    throw Error('not a ValidatorDescr');
 }
 
 function ValidatorDescrValue(): DictionaryValue<ValidatorDescr> {
@@ -294,12 +272,6 @@ export class LiteClient implements Contract {
             }
         }
 
-        // console.log('utime_since', utime_since);
-        // console.log('utime_until', utime_until);
-        // console.log('prevValidatorSet', prevValidatorSet);
-        // console.log('curValidatorSet', curValidatorSet);
-        // console.log('nextValidatorSet', nextValidatorSet);
-
         return {
             curValidatorSet,
             prevValidatorSet,
@@ -436,51 +408,50 @@ export class LiteClient implements Contract {
             }
         }
 
-        // let validatorSet: Dictionary<number, ValidatorDescr> | null = null;
-        // if (key_block) {
+        let validatorSet = curValidatorSet;
+        if (key_block) {
+            let sumLargestTotalWeights = 0;
+            for (const [_, validator] of validatorSet!) {
+                sumLargestTotalWeights += Number(validator.weight);
+            }
 
-        //     let sumLargestTotalWeights = 0;
-        //     for (const [_, validator] of validatorSet!) {
-        //         sumLargestTotalWeights += Number(validator.weight);
-        //     }
+            let friendlyValidators: UserFriendlyValidator[] = [];
+            for (const entry of validatorSet!) {
+                // magic number prefix for a node id of a validator
+                const nodeIdPrefix = Buffer.from([0xc6, 0xb4, 0x13, 0x48]);
+                const pubkey = entry[1].public_key.pubkey;
+                // Convert BigInt pubkey to hex string, pad to 64 chars, then convert to Buffer
+                const pubkeyBuffer = Buffer.from(pubkey.toString(16).padStart(64, '0'), 'hex');
+                // Now concatenate the buffers
+                const nodeId = await sha256(Buffer.concat([nodeIdPrefix, pubkeyBuffer]));
+                friendlyValidators.push({
+                    ...entry[1],
+                    node_id: nodeId.toString('base64'),
+                    weight: entry[1].weight,
+                    pubkey,
+                });
+            }
 
-        //     let friendlyValidators: UserFriendlyValidator[] = [];
-        //     for (const entry of validatorSet!) {
-        //         // magic number prefix for a node id of a validator
-        //         const nodeIdPrefix = Buffer.from([0xc6, 0xb4, 0x13, 0x48]);
-        //         const pubkey = entry[1].public_key.pubkey;
-        //         // Convert BigInt pubkey to hex string, pad to 64 chars, then convert to Buffer
-        //         const pubkeyBuffer = Buffer.from(pubkey.toString(16).padStart(64, '0'), 'hex');
-        //         // Now concatenate the buffers
-        //         const nodeId = await sha256(Buffer.concat([nodeIdPrefix, pubkeyBuffer]));
-        //         friendlyValidators.push({
-        //             ...entry[1],
-        //             node_id: nodeId.toString('base64'),
-        //             weight: entry[1].weight,
-        //             pubkey,
-        //         });
-        //     }
-
-        //     let totalWeight = 0;
-        //     for (const item of signatures) {
-        //         for (const validator of friendlyValidators) {
-        //             if (validator.node_id === item.node_id_short) {
-        //                 const key = pubkeyHexToEd25519DER(BigInt(validator.pubkey).toString(16).padStart(64, '0'));
-        //                 const verifyKey = crypto.createPublicKey({
-        //                     format: 'der',
-        //                     type: 'spki',
-        //                     key,
-        //                 });
-        //                 const result = crypto.verify(null, message, verifyKey, Buffer.from(item.signature, 'base64'));
-        //                 assert(result === true);
-        //                 totalWeight += Number(validator.weight);
-        //             }
-        //         }
-        //     }
-        //     assert(totalWeight > 0);
-        //     assert(totalWeight * 3 > sumLargestTotalWeights * 2);
-        //     console.log('Masterchain block is verified successfully!');
-        // }
+            let totalWeight = 0;
+            for (const item of signatures) {
+                for (const validator of friendlyValidators) {
+                    if (validator.node_id === item.node_id_short) {
+                        const key = pubkeyHexToEd25519DER(BigInt(validator.pubkey).toString(16).padStart(64, '0'));
+                        const verifyKey = crypto.createPublicKey({
+                            format: 'der',
+                            type: 'spki',
+                            key,
+                        });
+                        const result = crypto.verify(null, message, verifyKey, Buffer.from(item.signature, 'base64'));
+                        assert(result === true);
+                        totalWeight += Number(validator.weight);
+                    }
+                }
+            }
+            assert(totalWeight > 0);
+            assert(totalWeight * 3 > sumLargestTotalWeights * 2);
+            console.log('Masterchain block is verified successfully!');
+        }
     }
 
     static newKeyBlockMessage(
@@ -524,7 +495,7 @@ export class LiteClient implements Contract {
             Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
             Buffer.from(blockHeader.id.fileHash),
         ]);
-        LiteClient.testBlockData(blockDataCell, signatures, message, workchain);
+        // LiteClient.testBlockData(blockDataCell, signatures, message, workchain);
 
         const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
         let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
@@ -546,22 +517,6 @@ export class LiteClient implements Contract {
             .endCell();
 
         return messageBody;
-    }
-
-    async sendNewKeyBlock(
-        provider: ContractProvider,
-        via: Sender,
-        blockHeader: liteServer_blockHeader,
-        block: liteServer_BlockData,
-        signatures: ValidatorSignature[],
-        workchain: number,
-        value: bigint,
-    ) {
-        await provider.internal(via, {
-            sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: LiteClient.newKeyBlockMessage(blockHeader, block, signatures, workchain),
-            value: value,
-        });
     }
 
     static checkBlockMessage(
@@ -598,12 +553,12 @@ export class LiteClient implements Contract {
             .storeRef(Cell.fromBoc(Buffer.from(block.data))[0])
             .endCell();
 
-        // const message = Buffer.concat([
-        //     // magic prefix of message signing
-        //     Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
-        //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
-        //     Buffer.from(blockHeader.id.fileHash),
-        // ]);
+        const message = Buffer.concat([
+            // magic prefix of message signing
+            Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
+            Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
+            Buffer.from(blockHeader.id.fileHash),
+        ]);
         // LiteClient.testBlockData(blockDataCell, signatures, message);
 
         const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
@@ -625,6 +580,22 @@ export class LiteClient implements Contract {
             .storeDict(signaturesCell)
             .endCell();
         return messageBody;
+    }
+
+    async sendNewKeyBlock(
+        provider: ContractProvider,
+        via: Sender,
+        blockHeader: liteServer_blockHeader,
+        block: liteServer_BlockData,
+        signatures: ValidatorSignature[],
+        workchain: number,
+        value: bigint,
+    ) {
+        await provider.internal(via, {
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: LiteClient.newKeyBlockMessage(blockHeader, block, signatures, workchain),
+            value: value,
+        });
     }
 
     async sendCheckBlock(
@@ -649,6 +620,11 @@ export class LiteClient implements Contract {
 
     async getUtimeUntil(provider: ContractProvider) {
         const res = await provider.get('get_utime_until', []);
+        return res.stack.readNumber();
+    }
+
+    async getSeqno(provider: ContractProvider) {
+        const res = await provider.get('get_seqno', []);
         return res.stack.readNumber();
     }
 }

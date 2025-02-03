@@ -7,31 +7,35 @@ import * as fs from 'fs';
 import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
 import { liteServer_blockHeader } from 'ton-lite-client/dist/schema';
 import { ValidatorSignature } from '@oraichain/tonbridge-utils';
+import { TransactionChecker } from '../../wrappers/TransactionChecker';
 import { Op } from '../../wrappers/Constants';
 
-describe('LiteClient', () => {
-    let code: Cell;
+describe('TransactionChecker', () => {
+    let transactionChecker: SandboxContract<TransactionChecker>;
+    let transactionCheckerCode: Cell;
+    let liteClientCode: Cell;
     let blockData: any;
-    let initialData: any;
     let blockHeader: liteServer_blockHeader;
     let block: liteServer_BlockData;
     let initialBlock: liteServer_BlockData;
     let signatures: ValidatorSignature[];
-    const workchain: number = 0;
-
-    beforeAll(async () => {
-        code = await compile('FastnetLiteClient');
-    });
-
     let blockchain: Blockchain;
     let deployer: SandboxContract<TreasuryContract>;
     let liteClient: SandboxContract<LiteClient>;
+    let txData: any;
+    let txWithProof: any;
+    const workchain = -1;
+
+    beforeAll(async () => {
+        liteClientCode = await compile('TestnetLiteClient');
+        transactionCheckerCode = await compile('TransactionChecker');
+    });
 
     beforeEach(async () => {
         blockchain = await Blockchain.create();
 
-        const initialDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock1.json'), 'utf8');
-        initialData = JSON.parse(initialDataRaw);
+        const initialDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock1.json'), 'utf8');
+        let initialData = JSON.parse(initialDataRaw);
 
         initialBlock = {
             kind: initialData.block.kind,
@@ -52,14 +56,14 @@ describe('LiteClient', () => {
                     utime_until,
                     seqno: initialBlock.id.seqno,
                 },
-                code,
+                liteClientCode,
                 workchain,
             ),
         );
 
         deployer = await blockchain.treasury('deployer');
 
-        const deployResult = await liteClient.sendDeploy(deployer.getSender(), toNano('0.05'));
+        let deployResult = await liteClient.sendDeploy(deployer.getSender(), toNano('0.05'));
 
         expect(deployResult.transactions).toHaveTransaction({
             from: deployer.address,
@@ -67,11 +71,75 @@ describe('LiteClient', () => {
             deploy: true,
             success: true,
         });
+
+        transactionChecker = blockchain.openContract(
+            TransactionChecker.createFromConfig(
+                {
+                    lite_client: liteClient.address,
+                },
+                transactionCheckerCode,
+                workchain,
+            ),
+        );
+
+        deployer = await blockchain.treasury('deployer');
+
+        deployResult = await transactionChecker.sendDeploy(deployer.getSender(), toNano('0.05'));
+
+        expect(deployResult.transactions).toHaveTransaction({
+            from: deployer.address,
+            to: transactionChecker.address,
+            deploy: true,
+            success: true,
+        });
     });
 
-    it('should set an already existing key block', async () => {
-        const testDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock1.json'), 'utf8');
-        blockData = JSON.parse(testDataRaw);
+    it('should check transaction from a transitioning key block', async () => {
+        const blockDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock1.json'), 'utf8');
+        blockData = JSON.parse(blockDataRaw);
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = blockData.signatures;
+
+        const txDataRaw = fs.readFileSync(require.resolve('../testnet/txDataFromKeyBlock1.json'), 'utf8');
+        txData = JSON.parse(txDataRaw);
+        txWithProof = {
+            kind: txData.kind,
+            id: txData.id,
+            proof: txData.proof,
+            transaction: txData.transaction,
+        };
+
+        let result = await transactionChecker.sendCheckTransaction(
+            deployer.getSender(),
+            txWithProof,
+            blockHeader,
+            block,
+            signatures,
+            workchain,
+            toNano('5'),
+        );
+        expect(result.transactions).toHaveTransaction({
+            from: transactionChecker.address,
+            to: deployer.address,
+            op: Op.transaction_checked,
+            success: true,
+        });
+    });
+
+    it('should check transaction from a key block that starts a new epoch', async () => {
+        const blockDataRaw = fs.readFileSync(require.resolve('../testnet/keyblock2.json'), 'utf8');
+        blockData = JSON.parse(blockDataRaw);
 
         blockHeader = {
             kind: blockData.header.kind,
@@ -91,7 +159,7 @@ describe('LiteClient', () => {
             block,
             signatures,
             workchain,
-            toNano('0.05'),
+            toNano('1.5'),
         );
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
@@ -99,109 +167,45 @@ describe('LiteClient', () => {
             success: true,
             op: Op.ok,
         });
-    });
 
-    it('should check a transitioning key block', async () => {
-        const testDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock1.json'), 'utf8');
-        blockData = JSON.parse(testDataRaw);
-
-        blockHeader = {
-            kind: blockData.header.kind,
-            id: blockData.header.id,
-            mode: blockData.header.mode,
-            headerProof: blockData.header.headerProof,
+        const txDataRaw = fs.readFileSync(require.resolve('../testnet/txDataFromKeyBlock2.json'), 'utf8');
+        txData = JSON.parse(txDataRaw);
+        txWithProof = {
+            kind: txData.kind,
+            id: txData.id,
+            proof: txData.proof,
+            transaction: txData.transaction,
         };
-        block = {
-            kind: blockData.block.kind,
-            id: blockData.block.id,
-            data: blockData.block.data,
-        };
-        signatures = blockData.signatures;
 
-        let result = await liteClient.sendCheckBlock(
+        let result2 = await transactionChecker.sendCheckTransaction(
             deployer.getSender(),
-            blockHeader,
-            block,
-            signatures,
-            toNano('0.05'),
-        );
-        expect(result.transactions).toHaveTransaction({
-            from: liteClient.address,
-            to: deployer.address,
-            success: true,
-            op: Op.correct,
-        });
-    });
-
-    it('should set one new key blocks', async () => {
-        const testDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock2.json'), 'utf8');
-        blockData = JSON.parse(testDataRaw);
-
-        blockHeader = {
-            kind: blockData.header.kind,
-            id: blockData.header.id,
-            mode: blockData.header.mode,
-            headerProof: blockData.header.headerProof,
-        };
-        block = {
-            kind: blockData.block.kind,
-            id: blockData.block.id,
-            data: blockData.block.data,
-        };
-        signatures = blockData.signatures;
-        let result = await liteClient.sendNewKeyBlock(
-            deployer.getSender(),
+            txWithProof,
             blockHeader,
             block,
             signatures,
             workchain,
-            toNano('0.05'),
+            toNano('4.5'),
         );
-        expect(result.transactions).toHaveTransaction({
-            from: liteClient.address,
+        expect(result2.transactions).toHaveTransaction({
+            from: transactionChecker.address,
             to: deployer.address,
+            op: Op.transaction_checked,
             success: true,
-            op: Op.ok,
         });
     });
 
-    it('should check a key block that starts a new epoch', async () => {
-        const testDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock2.json'), 'utf8');
-        blockData = JSON.parse(testDataRaw);
-
-        blockHeader = {
-            kind: blockData.header.kind,
-            id: blockData.header.id,
-            mode: blockData.header.mode,
-            headerProof: blockData.header.headerProof,
-        };
-        block = {
-            kind: blockData.block.kind,
-            id: blockData.block.id,
-            data: blockData.block.data,
-        };
-        signatures = blockData.signatures;
-        let result = await liteClient.sendNewKeyBlock(
-            deployer.getSender(),
-            blockHeader,
-            block,
-            signatures,
-            workchain,
-            toNano('0.05'),
-        );
-        expect(result.transactions).toHaveTransaction({
-            from: liteClient.address,
-            to: deployer.address,
-            success: true,
-            op: Op.ok,
-        });
-
-        result = await liteClient.sendCheckBlock(deployer.getSender(), blockHeader, block, signatures, toNano('0.05'));
-        expect(result.transactions).toHaveTransaction({
-            from: liteClient.address,
-            to: deployer.address,
-            success: true,
-            op: Op.correct,
-        });
-    });
+    // it('should reject', async () => {
+    //     await transactionChecker.sendCheckTransaction(
+    //         deployer.getSender(),
+    //         txWithProof,
+    //         blockHeader,
+    //         block,
+    //         signatures,
+    //         workchain,
+    //         toNano('4.5'),
+    //     );
+    //     expect((await transactionChecker.getKey(0n)).toString()).toBe(deployer.address.toString());
+    //     // await transactionChecker.sendReject(lt.getSender());
+    //     // expect ((await transactionChecker.getKey(0n)).toString()).toBe("0")
+    // });
 });

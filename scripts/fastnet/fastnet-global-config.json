@@ -37,14 +37,14 @@
         "@type": "validator.config.global",
         "zero_state": {
             "workchain": -1,
-            "shard": -9223372036854776000,
+            "shard": -9223372036854775808,
             "seqno": 0,
             "root_hash": "C/MCgmpgfICBrMI87r1cMpSjvZ7kLAhT4F6rdwEyZmE=",
             "file_hash": "QdP/mhtTsAO0aTJo3HgNyBto/tlMt83oUS3sKa+arR0="
         },
         "init_block": {
             "workchain": -1,
-            "shard": -9223372036854776000,
+            "shard": -9223372036854775808,
             "seqno": 0,
             "root_hash": "C/MCgmpgfICBrMI87r1cMpSjvZ7kLAhT4F6rdwEyZmE=",
             "file_hash": "QdP/mhtTsAO0aTJo3HgNyBto/tlMt83oUS3sKa+arR0="

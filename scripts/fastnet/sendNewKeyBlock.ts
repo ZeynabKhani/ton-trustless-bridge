@@ -84,6 +84,7 @@ export async function sendNewKeyBlock() {
                 next_validator_set: nextValidatorSet,
                 utime_since,
                 utime_until,
+                seqno: initialData.seqno,
             },
             liteClientCode,
             workchain,
