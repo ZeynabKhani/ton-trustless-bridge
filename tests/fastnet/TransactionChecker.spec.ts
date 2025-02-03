@@ -24,7 +24,6 @@ describe('TransactionChecker', () => {
     let liteClient: SandboxContract<LiteClient>;
     let txData: any;
     let txWithProof: any;
-    let txHash: any;
     const workchain = -1;
 
     beforeAll(async () => {
@@ -120,11 +119,9 @@ describe('TransactionChecker', () => {
             proof: txData.proof,
             transaction: txData.transaction,
         };
-        txHash = txData.txHash
 
         let result = await transactionChecker.sendCheckTransaction(
             deployer.getSender(),
-            txHash,
             txWithProof,
             blockHeader,
             block,
@@ -179,11 +176,9 @@ describe('TransactionChecker', () => {
             proof: txData.proof,
             transaction: txData.transaction,
         };
-        txHash = txData.txHash
 
         let result2 = await transactionChecker.sendCheckTransaction(
             deployer.getSender(),
-            txHash,
             txWithProof,
             blockHeader,
             block,

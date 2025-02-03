@@ -130,8 +130,7 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
         
         ;; check tx hash in proof
 
-        slice transaction_cs = transaction.begin_parse();
-        int tx_hash = transaction_cs~load_uint(256);
+        int tx_hash = hash_at_level(transaction, 0);
 
         slice first_proof_ref_cs = first_proof_ref.begin_parse();
         first_proof_ref_cs~load_ref(); ;; skip ref 0
@@ -146,7 +145,7 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
         slice account_blocks_cs = account_blocks.begin_parse();
         cell ref0 = account_blocks_cs~load_ref();
         slice ref0_cs = ref0.begin_parse();
-        while (ref0_cs.slice_bits() < 100) {
+        while (ref0_cs.slice_bits() < 256) {
             ref0 = ref0_cs~load_ref();
             try {
                 ref0_cs = ref0.begin_parse();
