@@ -63,6 +63,9 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
 
     const txCount = 1;
     const addr = Address.parse('kf8zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM_BP');
+    //0f-xUTQkBhELXQ3q5_OShq2H3eIFZTzqYXd2i6aJA51APfp9
+    //kf8zMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM_BP
+    //kf9VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQft
     const accState = await client.getAccountState(addr, blockInfo);
     // const wantedTxHash = " "
     if (!accState.lastTx) {
@@ -158,11 +161,16 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
     
             // Query the transaction proof
         const txWithProof = await client.getAccountTransaction(addr, tx.tx.lt.toString(10), tx.blockId);
+        // console.log(await client.listBlockTransactions(tx.blockId));
+
+        // console.log(tx)
         if (txWithProof.id.seqno == initialData.header.id.seqno) {
-            console.log(tx)
+            const wantedTxHash = tx.tx.hash().toString('hex');
+            // console.log('wanted tx hash: ', wantedTxHash);
+
             existingData = {};
-            if (fs.existsSync('tests/testnet/txData.json')) {
-                existingData = JSON.parse(fs.readFileSync('tests/testnet/txData.json', 'utf8'));
+            if (fs.existsSync('tests/testnet/txData2.json')) {
+                existingData = JSON.parse(fs.readFileSync('tests/testnet/txData2.json', 'utf8'));
             }
     
             const txProof = await TonRocks.types.Cell.fromBoc(txWithProof.proof);
@@ -172,16 +180,18 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
             const txProofHash = txProofFirstRef.hashes[0];
             assert(Buffer.from(txProofHash).toString('hex') === tx.blockId.rootHash.toString('hex'));
     
-            const txData = {
+            const txData2 = {
                 id: txWithProof.id,
                 proof: txWithProof.proof,
                 transaction: txWithProof.transaction,
-                rootHash: Buffer.from(txProofHash).toString('hex')
+                rootHash: Buffer.from(txProofHash).toString('hex'),
+                txHash: wantedTxHash,
             };
     
-            const mergedData = { ...existingData, ...txData };
-            fs.writeFileSync('tests/testnet/txData.json', JSON.stringify(mergedData, null, 2));
-            console.log('tx with proof written to tests/testnet/txData.json');
+            const mergedData = { ...existingData, ...txData2 };
+            fs.writeFileSync('tests/testnet/txData2.json', JSON.stringify(mergedData, null, 2));
+            console.log('tx with proof written to tests/testnet/txData2.json');
+            break;
         }
     }
 
