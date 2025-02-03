@@ -263,7 +263,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         }
         (key, value, success) = validator_set.udict_get_next?(16, key);
     }
-    throw_unless(0xf017, total_weight > 0);
+    throw_unless(0xf017, total_weight > 0); 
     throw_unless(0xf018, total_weight > sum_total_weight * 2 / 3);
     ~strdump("block is verified");
     return ();
@@ -277,7 +277,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         (cell new_cur_validator_set, int new_utime_since, int new_utime_until) = load_validator_set(config_param_34_cs.begin_parse());
         throw_unless(0xf018, equal_slices_bits(new_cur_validator_set.begin_parse(), next_validator_set.begin_parse()));
         throw_unless(0xf019, equal_slices_bits(new_prev_validator_set.begin_parse(), cur_validator_set.begin_parse()));
-        throw_unless(0xf020, (new_utime_since <= gen_utime) & (new_utime_until > gen_utime));
+        throw_unless(error::block_does_not_correspond_to_current_epoch, (new_utime_since < gen_utime) & (new_utime_until > gen_utime));
         save_data(new_prev_validator_set, new_cur_validator_set, begin_cell().end_cell(), new_utime_since, new_utime_until, new_seqno);
     } else {
         ;; This is a transitioning key block, validation is done by cur_validator_set and next validator set is updated
@@ -330,6 +330,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         throw_unless(error::not_a_key_block, is_key_block);
 
         (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
+        
         slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
 
         verify_signatures(cur_validator_set, signatures, message);
@@ -367,7 +368,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
         (block_data, int gen_utime) = load_block_data(block_data);
 
-        throw_unless(0xf022, (gen_utime >= utime_since) & (gen_utime < utime_until));
+        throw_unless(0xf022, (gen_utime > utime_since) & (gen_utime <= utime_until));
 
         (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
         slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();

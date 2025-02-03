@@ -15,23 +15,25 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
 int slice_hash_2(builder b1, builder b2, int n) asm "HASHEXT_SHA256";
 int check_signature_for_slice(slice message, slice signature, int public_key) asm "CHKSIGNS";
 
-(cell, cell, cell, int, int) load_data() inline_ref {
+(cell, cell, cell, int, int, int) load_data() inline_ref {
     slice ds = get_data().begin_parse();
     cell prev_validator_set = ds~load_dict();
     cell cur_validator_set = ds~load_dict();
     cell next_validator_set = ds~load_dict();
     int utime_since = ds~load_uint(32);
     int utime_until = ds~load_uint(32);
+    int seqno = ds~load_int(32);
     return (
         prev_validator_set,
         cur_validator_set,
         next_validator_set,
         utime_since,
-        utime_until
+        utime_until,
+        seqno
     );
 }
 
-() save_data(cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until) impure {
+() save_data(cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno) impure {
     set_data(
         begin_cell()
             .store_dict(prev_validator_set)
@@ -39,6 +41,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
             .store_dict(next_validator_set)
             .store_uint(utime_since, 32)
             .store_uint(utime_until, 32)
+            .store_int(seqno, 32)
             .end_cell()
     );
 }
@@ -166,7 +169,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
     mc_block_extra~load_uint(16);
     int is_key_block = mc_block_extra~load_uint(1);
     
-    ;; mc_block_extra~load_ref();
+    ;; mc_block_extra~load_ref(); 
     ;; mc_block_extra~load_ref();
     mc_block_extra~load_ref();
     mc_block_extra~load_uint(11);
@@ -260,29 +263,29 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         }
         (key, value, success) = validator_set.udict_get_next?(16, key);
     }
-    ;; throw_unless(0xf017, total_weight > 0);
-    ;; throw_unless(0xf018, total_weight == sum_total_weight);
+    throw_unless(0xf017, total_weight > 0);
+    throw_unless(0xf018, total_weight == sum_total_weight);
     ~strdump("block is verified");
     return ();
 }
 
-() update_current_epoch(cell config_param_32_cs, cell config_param_34_cs, cell config_param_36_cs, int gen_utime) impure {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until) = load_data();
+() update_current_epoch(cell config_param_32_cs, cell config_param_34_cs, cell config_param_36_cs, int gen_utime, int new_seqno) impure {
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno) = load_data();
     if (slice_data_empty?(config_param_36_cs.begin_parse())) {
         ;; This is the first key block in a new epoch, validation is done by cur_validator_set and validator set is updated
         (cell new_prev_validator_set, _, _) = load_validator_set(config_param_32_cs.begin_parse());
         (cell new_cur_validator_set, int new_utime_since, int new_utime_until) = load_validator_set(config_param_34_cs.begin_parse());
         throw_unless(0xf018, equal_slices_bits(new_cur_validator_set.begin_parse(), next_validator_set.begin_parse()));
         throw_unless(0xf019, equal_slices_bits(new_prev_validator_set.begin_parse(), cur_validator_set.begin_parse()));
-        throw_unless(0xf020, (new_utime_since <= gen_utime) & (new_utime_until > gen_utime));
-        save_data(new_prev_validator_set, new_cur_validator_set, begin_cell().end_cell(), new_utime_since, new_utime_until);
+        throw_unless(error::block_does_not_correspond_to_current_epoch, (new_utime_since <= gen_utime) & (new_utime_until > gen_utime)); 
+        save_data(new_prev_validator_set, new_cur_validator_set, begin_cell().end_cell(), new_utime_since, new_utime_until, new_seqno);
     } else {
         ;; This is a transitioning key block, validation is done by cur_validator_set and next validator set is updated
         (cell new_next_validator_set, _, _) = load_validator_set(config_param_36_cs.begin_parse());
         (cell new_cur_validator_set, _, _) = load_validator_set(config_param_34_cs.begin_parse());
         throw_unless(0xf021, equal_slices_bits(new_cur_validator_set.begin_parse(), cur_validator_set.begin_parse()));
-        throw_unless(error::block_does_not_correspond_to_current_epoch, (utime_since < gen_utime) & (utime_until >= gen_utime));
-        save_data(prev_validator_set, cur_validator_set, new_next_validator_set, utime_since, utime_until);
+        throw_unless(error::block_does_not_correspond_to_current_epoch, (utime_since < gen_utime) & (utime_until > gen_utime));
+        save_data(prev_validator_set, cur_validator_set, new_next_validator_set, utime_since, utime_until, new_seqno);
     }
     ~strdump("current epoch is updated");
 }
@@ -301,7 +304,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
     int op = in_msg_body~load_uint(32);
 
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until) = load_data();
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno) = load_data();
 
     ;; ~dump(slice_data_empty?(first_ref_slice));
     ;; ~dump(slice_refs_empty?(first_ref_slice));
@@ -332,7 +335,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
         verify_signatures(cur_validator_set, signatures, message);
 
-        update_current_epoch(config_param_32_cs, config_param_34_cs, config_param_36_cs, gen_utime);
+        update_current_epoch(config_param_32_cs, config_param_34_cs, config_param_36_cs, gen_utime, block_header_id_seqno);
 
         var ok_msg_body = begin_cell()
                         .store_uint(op::ok, 32)
@@ -370,7 +373,15 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
         (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
         slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
 
-        verify_signatures(cur_validator_set, signatures, message);
+        if (seqno == block_header_id_seqno) {
+            if (slice_data_empty?(next_validator_set.begin_parse())) {
+                verify_signatures(prev_validator_set, signatures, message);
+            } else {
+                verify_signatures(cur_validator_set, signatures, message);
+            }
+        } else {
+            verify_signatures(cur_validator_set, signatures, message);
+        }
         
         var correct_msg_body = begin_cell()
                         .store_uint(op::correct, 32)
@@ -392,11 +403,16 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 }
 
 (int) get_utime_since() method_id {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until) = load_data();
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno) = load_data();
     return utime_since;
 }
 
 (int) get_utime_until() method_id {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until) = load_data();
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno) = load_data();
     return utime_until;
+}
+
+(int) get_seqno() method_id {
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno) = load_data();
+    return seqno;
 }
