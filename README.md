@@ -2,6 +2,7 @@
 
 ## What is this repository?
 This repository implements a trustless bridge that enables smart contracts on the TON blockchain to verify the existence of transactions from another blockchain without relying on centralized intermediaries. It achieves this by implementing two key smart contracts:
+
 ### 1- Lite-Client Smart Contract: 
 - This contract maintains a synchronized chain of key blocks from the counterparty blockchain.
 - It verifies the validity of new blocks by checking their signatures against the validator set of the last key block.
@@ -12,6 +13,8 @@ This repository implements a trustless bridge that enables smart contracts on th
 ### 2- Transaction-Checker Smart Contract
 - This contract validates Merkle proofs of transactions included in blocks from the counterparty blockchain.
 - It processes a check_transaction message containing the transaction data, proof, and transaction block information and interacts with the Lite-Client contract to verify block validity.
+
+The implementation details are based on the specifications outlined in the [Ton Trustless Bridge Challenge documentation](https://contest.com/docs/TrustlessBridgeChallenge), ensuring adherence to the required design and security principles.
 
 **The tests and scripts in this project currently are samples to bridge the masterchains of Ton Fastnet and Ton Testnet.**
 
