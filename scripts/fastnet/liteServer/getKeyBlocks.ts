@@ -150,7 +150,7 @@ async function verifyMasterchainBlock(
 }
 
 (async () => {
-    const jsonData = fs.readFileSync(require.resolve('./fastnet-global-config.json'), 'utf8');
+    const jsonData = fs.readFileSync('scripts/fastnet/liteServer/fastnet-global-config.json', 'utf8');
     const data = JSON.parse(jsonData);
 
     // const { liteservers } = await fetch('https://ton.org/global-config.json').then((data) => data.json());

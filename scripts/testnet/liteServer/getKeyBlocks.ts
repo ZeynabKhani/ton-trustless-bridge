@@ -146,7 +146,7 @@ async function verifyMasterchainBlock(
 }
 
 (async () => {
-    const jsonData = fs.readFileSync(require.resolve('./testnet-global-config.json'), 'utf8');
+    const jsonData = fs.readFileSync('scripts/testnet/liteServer/testnet-global-config.json', 'utf8');
     const data = JSON.parse(jsonData);
 
     // const { liteservers } = await fetch('https://ton.org/global-config.json').then((data) => data.json());
@@ -170,7 +170,7 @@ async function verifyMasterchainBlock(
     let blockInfo = master.last;
     let parsedBlock: ParsedBlock;
     let validatorSet;
-    let keyBlockNumber = 1;
+    let keyBlockNumber = 4;
     let counter = 4 - keyBlockNumber;
     while (true) {
         const block = await engine.query(Functions.liteServer_getBlock, {
@@ -236,12 +236,10 @@ async function verifyMasterchainBlock(
     }
 
     const blockHeader = await client.getBlockHeader(blockInfo);
-    const g = blockHeader.id;
     const testData = {
         header: {
             id: blockHeader.id,
             headerProof: blockHeader.headerProof,
-            // mode: blockHeader.mode,
         },
     };
     let existingData = {};

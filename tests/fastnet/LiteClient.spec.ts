@@ -35,8 +35,8 @@ describe('LiteClient', () => {
         initialData = JSON.parse(initialDataRaw);
 
         initialBlock = {
-            kind: initialData.block.kind,
-            id: initialData.block.id,
+            kind: initialData.header.kind,
+            id: initialData.header.id,
             data: initialData.block.data,
         };
 
@@ -49,8 +49,8 @@ describe('LiteClient', () => {
                     prev_validator_set: prevValidatorSet,
                     cur_validator_set: curValidatorSet,
                     next_validator_set: nextValidatorSet,
-                    utime_since,
-                    utime_until,
+                    utime_since: utime_since,
+                    utime_until: utime_until,
                     seqno: initialBlock.id.seqno,
                     blocks_workchain: blocksWorkchain,
                 },
