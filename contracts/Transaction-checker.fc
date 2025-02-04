@@ -1,92 +1,115 @@
-#include "imports/stdlib.fc";
+#include "imports/helpers.fc";
+#include "imports/transaction-checker-constants.fc";
 
-const op::check_transaction = 0x91d555f7;
-const op::transaction_checked = 0x756adff1;
-const op::check_block = 0x8eaa9d76;
-const op::correct = 0xce02b807;
-const op::reject = 0x7f3b8c1d;
-const error::unknown_opcode = 0xffff;
-const error::inconsistent_proof = 0xfff1;
-const error::unauthorized = 0xfff2;
-const error::transaction_not_found = 0xfff3;
-
-
-(slice, int) parse_exotic(cell x) asm "XCTOS";
-(slice, slice) load_dicts(slice s) asm(-> 1 0) "LDDICTS";
-int hash_at_level(cell x, int i) asm "CHASHIX";
-
-
-
-(slice, int, cell) load_data() inline_ref {
+(slice, cell, int) load_data() inline_ref {
     slice ds = get_data().begin_parse();
     return (
         ds~load_msg_addr(), ;;lite client address
-        ds~load_uint(256), ;; query id
-        ds~load_dict() ;; check transaction requests
+        ds~load_dict(), ;; check transaction requests, store pending transactions that are sent to lite client
+        ds~load_uint(256) ;; queries counter
     );
 }
 
-() save_data(slice lite_client, int query_id, cell check_transaction_requests) impure {
+() save_data(slice lite_client, cell check_transaction_requests, int queries_cnt) impure {
     set_data(
         begin_cell()
             .store_slice(lite_client)
-            .store_uint(query_id, 256)
             .store_dict(check_transaction_requests)
+            .store_uint(queries_cnt, 256)
             .end_cell()
     );
 }
 
-
-;; Example function demonstrating dictionary (hashmap) usage
-() example() inline {
-    ;; Create an empty dictionary
-    cell dict = new_dict();
-    ;; ~strdump("new_dict");
-    int c = 0;
-    
-    ;; Store values in dictionary (key length 256, value length 64)
-    dict~udict_set(256, 123, begin_cell().store_uint(999, 64).end_cell().begin_parse());
-    dict~udict_set(256, 456, begin_cell().store_uint(888, 64).end_cell().begin_parse());
-    
-    ;; Retrieve value from dictionary
-    (slice value, int success) = dict.udict_get?(256, 123);
-    if (success) {
-        int retrieved_value = value~load_uint(64);
-        ;; ~dump(retrieved_value);
-        ;; retrieved_value will be 999
-    }
-    
-    ;; Check if key exists
-    ;; int key_exists = dict.udict_has?(256, 123);
-    
-    ;; Delete key-value pair
-    dict~udict_delete?(256, 123);
-    
-    ;; Iterate through dictionary
-    ;; (int key, slice value, int found) = dict.udict_get_min?(256);
-    ;; while (found) {
-    ;;     int val = value~load_uint(64);
-    ;;     ;; Process value...
-    ;;     ~dump(val);
-    ;;     ;; Get next key-value pair
-    ;;     (key, value, found) = dict.udict_get_next?(256, key);
-    ;;     ~dump(found);
-    ;; }
-}
-
+;; compute root hash for the block cell
 (int) compute_root_hash(cell block) impure inline {
     slice block_cs = block.begin_parse();
     slice block_header_cs = block_cs~load_ref().begin_parse();
 
-    block_header_cs~load_int(32); ;; skip header kind
+    block_header_cs~skip_bits(32); ;; skip header kind
     slice block_header_id_cs = block_header_cs~load_ref().begin_parse(); ;; skip header id cs
 
-    block_header_id_cs~load_int(32); ;; skip kind
-    block_header_id_cs~load_int(32); ;; skip workchin
-    block_header_id_cs~load_int(64); ;; skip shard
-    block_header_id_cs~load_int(32); ;; skip seqno
+    block_header_id_cs~skip_bits(32); ;; skip kind
+    block_header_id_cs~skip_bits(32); ;; skip workchin
+    block_header_id_cs~skip_bits(64); ;; skip shard
+    block_header_id_cs~skip_bits(32); ;; skip seqno
     int block_header_id_root_hash = block_header_id_cs~load_uint(256);
     return block_header_id_root_hash;
+}
+
+(int, cell) verify_transaction_proof(cell proof) impure inline {
+    ;; (slice proof_slice, int is_exotic) = parse_exotic(proof);
+    ;; throw_unless(error::not_exotic, is_exotic == -1);
+    slice merkle_proof = verify_and_parse_merkle_proof_cell(proof);
+    cell first_proof_ref = merkle_proof~load_ref();
+    int proof_root_hash = hash_at_level(first_proof_ref, 0);
+
+    ;; proof_slice~skip_bits(8); ;;skip cell type
+    throw_unless(error::inconsistent_proof, proof_root_hash == merkle_proof~load_uint(256));
+    ~strdump("transaction proof root hash is ok");
+    return (proof_root_hash, first_proof_ref);
+}
+
+(slice) load_account_block_cell(cell first_proof_ref) impure inline {
+    ;; extracting block extra
+    slice first_proof_ref_cs = first_proof_ref.begin_parse();
+    first_proof_ref_cs~load_ref(); ;; skip ref 0
+    first_proof_ref_cs~load_ref(); ;; skip ref 1
+    first_proof_ref_cs~load_ref(); ;; skip ref 2
+
+    cell block_extra = first_proof_ref_cs~load_ref(); ;; block extra 
+    slice block_extra_cs = block_extra.begin_parse();
+    block_extra_cs~load_ref(); ;; skip InMsgDescr
+    block_extra_cs~load_ref(); ;; skip OutMsgDescr
+
+
+    cell account_blocks = block_extra_cs~load_ref(); 
+    slice account_blocks_cs = account_blocks.begin_parse();
+    cell ref0 = account_blocks_cs~load_ref();
+    slice ref0_cs = ref0.begin_parse(); ;; will contain the final account block
+    return ref0_cs;
+}
+
+;; verify that tx hash exists in the account blocks' transactions list
+(int) verify_tx_hash(cell transaction, slice account_block_cs) impure inline {
+    ;; compute tx hash
+    int tx_hash = hash_at_level(transaction, 0);
+    ;; check existence of tx hash in proof
+    ;; we should search for tx hash in block extra -> account blocks -> account block -> transactions
+    int flag = 0;
+    cell ref0 = begin_cell().end_cell();
+
+    while (account_block_cs.slice_bits() < 256) {
+        ref0 = account_block_cs~load_ref();
+        try {
+            account_block_cs = ref0.begin_parse();
+        } catch (x, n) {
+            ref0 = account_block_cs~load_ref();
+            account_block_cs = ref0.begin_parse();
+        }
+    }
+
+    ;; account block containing the transaction is in account_block_cs
+    while (account_block_cs.slice_refs_empty?() != -1) {
+        try {
+            cell next_cell = account_block_cs~load_ref();
+            (slice ref1, int is_exotic) = parse_exotic(next_cell);
+            while (is_exotic == 0) {
+                if (ref1.slice_refs_empty?() != -1) {
+                    next_cell = ref1~load_ref();
+                    (ref1, is_exotic) = parse_exotic(next_cell); ;; transaction is stored in an exotic cell
+                } else {
+                    is_exotic = -1;
+                }
+            }
+            ref1~skip_bits(16); ;; skip extra bits to get the tx hash
+            if (ref1~load_uint(256) == tx_hash) { ;; compare tx hash in block extra to expected tx hash of transaction
+                flag = 1;
+            }
+        } catch (x, n) {
+            account_block_cs~load_ref();
+        }
+    }
+    return (flag);
 }
 
 () recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
@@ -99,97 +122,76 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
     if (flags & 1) {        
         return ();
     }
-    slice sender_address = cs~load_msg_addr();
-    ~dump(82);
-    int op = in_msg_body~load_uint(32);
-    ~dump(83);
-    (slice lite_client, int query_id, cell check_transaction_requests) = load_data();
 
-    ~dump(84);
+    slice sender_address = cs~load_msg_addr();
+
+    int op = in_msg_body~load_uint(32);
+    (slice lite_client, cell check_transaction_requests, int queries_cnt) = load_data();
 
     if (op == op::check_transaction) {
-        ~dump(85);
+        int query_id = queries_cnt; ;; unique counter for query id
         cell transaction = in_msg_body~load_ref();
         cell proof = in_msg_body~load_ref();
         cell current_block = in_msg_body~load_ref(); 
 
+        (int proof_root_hash, cell first_proof_ref) = verify_transaction_proof(proof);
+        
+        (slice account_block_cs) = load_account_block_cell(first_proof_ref);
+        (int flag) = verify_tx_hash(transaction, account_block_cs);
+        throw_unless(error::transaction_not_in_block, flag == 1);
+
+        ;; store transaction in dict to answer correct or reject in future
+        check_transaction_requests~udict_set_ref(
+            64, 
+            query_id,
+            begin_cell()
+            .store_slice(sender_address)
+            .store_uint(proof_root_hash, 256)
+            .store_ref(transaction)
+            .end_cell()
+        );
+
         slice current_block_cs = current_block.begin_parse();
-        cell pruned_block_data = current_block_cs~load_ref(); ;; block data
+        cell block_data = current_block_cs~load_ref(); ;; block data
         cell block_signature = current_block_cs~load_dict(); ;; block proof
+        ;; query lite client to check block
+        var check_block_msg_body = begin_cell()
+                        .store_uint(op::check_block, 32)
+                        .store_uint(query_id, 64)
+                        .store_ref(block_data)
+                        .store_dict(block_signature)
+                        .end_cell();
+        var msg = begin_cell()
+                .store_uint(0x18, 6)
+                .store_slice(lite_client)
+                .store_coins(0)
+                .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                .store_ref(check_block_msg_body);
 
-        ~dump(86);
+        send_raw_message(msg.end_cell(), 64); 
 
-        (slice pruned_block_data_slice, int is_exotic) = parse_exotic(pruned_block_data);
-        throw_unless(0xf001, is_exotic == -1);
-        throw_unless(0xf002, slice_bits(pruned_block_data_slice) == 280);
-        throw_unless(0xf003, pruned_block_data_slice~load_uint(8) == 3);
-
-        ~dump(87);
-        int root_hash = hash_at_level(pruned_block_data_slice~load_ref(), 0);
-        throw_unless(0xf004, root_hash == pruned_block_data_slice~load_uint(256));
-        ;; throw_unless(0xf005, root_hash == block_header_id_root_hash);
-        ~dump(root_hash);
-
-
-        ;; check proofs to confirm that a given transaction was committed in some masterchain block of the current epoch.
-        ;; check root hash of block is equal to proof.refs[0].hashes[0];
-        ;; (slice proof_slice, int is_exotic) = parse_exotic(proof);
-        ;; throw_unless(0xf001, is_exotic);
-        ;; cell first_proof_ref = proof_slice~load_ref();
-        ;; int proof_root_hash = hash_at_level(first_proof_ref, 0);
-
-        ;; proof_slice~load_uint(8); ;;skip cell type
-        ;; throw_unless(error::inconsistent_proof, proof_root_hash == proof_slice~load_uint(256));
-        ;; throw_unless(error::inconsistent_proof, proof_root_hash == block_root_hash);
-
-        ;; int block_root_hash = compute_root_hash(block_data); ;; compute root hash
-
-
-        ;; ;; TODO check tx hash in proof
-        ;; slice first_proof_ref_cs = first_proof_ref.begin_parse();
-        ;; first_proof_ref_cs~load_ref(); ;; skip ref 0
-        ;; first_proof_ref_cs~load_ref(); ;; skip ref 1
-        ;; first_proof_ref_cs~load_ref(); ;; skip ref 2
-        ;; cell block_extra = first_proof_ref_cs~load_ref(); ;; block extra 
-        ;; slice block_extra_cs = block_extra.begin_parse();
-        ;; block_extra_cs~load_uint(32);
-        ;; block_extra_cs~load_ref();
-        ;; block_extra_cs~load_ref();
-        ;; cell account_blocks = block_extra_cs~load_ref();
-
-        ;; slice transaction_cs = transaction.begin_parse();
-        ;; cell tx_hash = transaction_cs~load_ref();
-
-        ;; check_transaction_requests~udict_set_ref(64, query_id, begin_cell().store_slice(sender_address).store_ref(transaction).end_cell()); ;; store sender address for this query id
-
-        ;; ;; query lite client to check block
-        ;; var check_block_msg_body = begin_cell()
-        ;;                 .store_uint(op::check_block, 32)
-        ;;                 .store_uint(query_id, 64)
-        ;;                 .store_ref(block_data)
-        ;;                 .store_dict(block_signature)
-        ;;                 .end_cell();
-        ;; var msg = begin_cell()
-        ;;         .store_uint(0x18, 6)
-        ;;         .store_slice(lite_client)
-        ;;         .store_coins(0)
-        ;;         .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-        ;;         .store_ref(check_block_msg_body);
-
-        ;; send_raw_message(msg.end_cell(), 64); 
-
-        ;; save_data(lite_client, query_id, check_transaction_requests);
+        save_data(lite_client, check_transaction_requests, queries_cnt + 1);
         return ();
     }
 
+    ;; will be called by lite client if check block is correct
     if (op == op::correct) {
-        throw_unless(error::unauthorized, equal_slices_bits(sender_address, lite_client));
-        int query_id = in_msg_body~load_uint(64); ;; query id
+        throw_unless(error::unauthorized, equal_slices_bits(sender_address, lite_client)); ;; only lite client can call this method
+        int query_id = in_msg_body~load_uint(64); 
+        int block_root_hash = in_msg_body~load_uint(256);
+
+        ;; query data related to this transaction
         (cell data, int success) = check_transaction_requests.udict_get_ref?(64, query_id);
+
         if (success) {
             slice data_cs = data.begin_parse();
             slice from_address = data_cs~load_msg_addr();
+            int proof_root_hash = data_cs~load_uint(256);
             cell transaction = data_cs~load_ref();
+
+            throw_unless(error::inconsistent_proof, proof_root_hash == block_root_hash);
+
+            ;; delete transaction from dict to avoid memory overhead
             check_transaction_requests~udict_delete?(64, query_id);
             
             var transaction_checked_msg_body = begin_cell()
@@ -204,24 +206,24 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
                     .store_ref(transaction_checked_msg_body);
             send_raw_message(msg.end_cell(), 64); 
         } else {
-            throw(error::transaction_not_found);
+            throw(error::transaction_not_found); ;; should never happen
         }
 
-        save_data(lite_client, query_id, check_transaction_requests);
+        save_data(lite_client, check_transaction_requests, queries_cnt);
+        ~strdump("transaction checked");
         return ();
     }
 
+    ;; will be called by lite client if check block is rejected
     if (op == op::reject) {
-        throw_unless(error::unauthorized, equal_slices_bits(sender_address, lite_client));
+        throw_unless(error::unauthorized, equal_slices_bits(sender_address, lite_client)); ;; only lite client can call this method
 
-        int query_id = in_msg_body~load_uint(64); ;; query id
-        (cell data, int success) = check_transaction_requests.udict_get_ref?(64, query_id);
+        int query_id = in_msg_body~load_uint(64); 
 
-        if (success) {
-            check_transaction_requests~udict_delete?(64, query_id);
-        } 
-
-        save_data(lite_client, query_id, check_transaction_requests);
+        ;; delete transaction from dict to avoid memory overhead
+        check_transaction_requests~udict_delete?(64, query_id);
+        
+        save_data(lite_client, check_transaction_requests, queries_cnt);
         return ();
     }
     
@@ -229,7 +231,7 @@ int hash_at_level(cell x, int i) asm "CHASHIX";
 }
 
 (slice) get_key(int key) method_id {
-    (slice lite_client, int query_id, cell check_transaction_requests) = load_data();
+    (slice lite_client, cell check_transaction_requests, int queries_cnt) = load_data();
     (slice payload, int success) = check_transaction_requests.udict_get?(64, key);
     return payload;
 }

@@ -10,4 +10,8 @@ export abstract class Op {
 
 export abstract class Error {
     static unknown_opcode = 0xffff;
+    static inconsistent_proof = 0xfff1;
+    static unauthorized = 0xfff2;
+    static transaction_not_in_block = 0xfff4;
+    static not_exotic = 0xf001;
 }

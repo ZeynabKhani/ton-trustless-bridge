@@ -1,19 +1,5 @@
-;; Lite client for Testnet, to be deployed on Fastnet
-#include "imports/stdlib.fc";
-
-const op::new_key_block = 0x11a78ffe;
-const op::check_block = 0x8eaa9d76;
-const op::ok = 0xff8ff4e1;
-const op::correct = 0xce02b807;
-const error::unknown_opcode = 0xffff;
-const error::unknown_param_type = 0xf100;
-const error::not_a_key_block = 0xf101;
-const error::block_does_not_correspond_to_current_epoch = 0xf102;
-
-(slice, int) parse_exotic(cell x) asm "XCTOS";
-int hash_at_level(cell x, int i) asm "CHASHIX";
-int slice_hash_2(builder b1, builder b2, int n) asm "HASHEXT_SHA256";
-int check_signature_for_slice(slice message, slice signature, int public_key) asm "CHKSIGNS";
+#include "imports/helpers.fc";
+#include "imports/lite-client-constants.fc";
 
 (cell, cell, cell, int, int, int, int) load_data() inline_ref {
     slice ds = get_data().begin_parse();
@@ -59,18 +45,6 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
     return (block_id_workchain, block_id_seqno, block_id_root_hash, block_id_file_hash);
 }
 
-(slice) verify_and_parse_merkle_proof_cell(cell merkle_proof_cell) impure inline {
-    (slice merkle_proof_cs, int is_exotic) = parse_exotic(merkle_proof_cell);
-    throw_unless(0xf001, is_exotic == -1);
-    throw_unless(0xf002, slice_bits(merkle_proof_cs) == 280);
-    throw_unless(0xf003, merkle_proof_cs~load_uint(8) == 3);
-
-    ;; int root_hash = hash_at_level(merkle_proof_cs~load_ref(), 0);
-    ;; throw_unless(0xf004, root_hash == merkle_proof_cs~load_uint(256));
-    ;; return root_hash;
-    return merkle_proof_cs;
-}
-
 (slice, int) verify_block_header(slice block_header_cs) impure inline {
     ;; int block_header_kind = block_header_cs~load_int(32);
     slice block_header_id_cs = block_header_cs~load_ref().begin_parse();
@@ -86,21 +60,6 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
     ~strdump("header root hash is ok");
     return (block_header_id_cs, root_hash);
 }
-
-;; (slice) verify_except_block_info_data(slice block_data_cs, slice block_header_id_cs) impure inline {
-;;     ;; block_data_cs~load_ref(); ;; todo: if we do not pass a ref here, hashes won't match
-;;     cell block_data_c = block_data_cs~load_ref();
-    
-;;     (_, _, int block_header_id_root_hash, _) = parse_block_id(block_header_id_cs);
-
-;;     slice merkle_proof = verify_and_parse_merkle_proof_cell(block_data_c);
-;;     cell merkle_proof_c = merkle_proof~load_ref();
-;;     int root_hash = hash_at_level(merkle_proof_c, 0);
-;;     throw_unless(0xf004, root_hash == merkle_proof~load_uint(256));
-;;     throw_unless(0xf005, root_hash == block_header_id_root_hash);
-;;     ~strdump("data root hash is ok");
-;;     return (merkle_proof_c.begin_parse());
-;; }
 
 (slice)  verify_and_parse_block_data(slice block_data_cs, slice block_header_id_cs) impure inline {
     ;; int block_data_kind = block_data_cs~load_int(32);
@@ -131,8 +90,7 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
 (int, int) load_block_info(slice info) impure inline {
     int info_magic = info~load_uint(32);
-    throw_unless(0xf013, info_magic == 0x9bc7a987);
-    ~strdump("info magic is ok");  
+    throw_unless(0xf013, info_magic == 0x9bc7a987); 
     
     ;; int version = info~load_uint(32);
     ;; int not_master = info~load_uint(1);
@@ -173,7 +131,6 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 (slice, int, int) load_block_data(slice block_data_cs) impure inline {
     int data_magic = block_data_cs~load_uint(32);
     throw_unless(0xf012, data_magic == 0x11ef55aa);
-    ~strdump("data magic is ok");
 
     int global_id = block_data_cs~load_int(32);
     slice info = block_data_cs~load_ref().begin_parse();
@@ -397,52 +354,81 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
 
     if (op == op::check_block) {
         int query_id = in_msg_body~load_uint(64);
-        cell block = in_msg_body~load_ref();
-        cell signatures = in_msg_body~load_ref();
+        try {
+            cell block = in_msg_body~load_ref();
+            cell signatures = in_msg_body~load_ref();
 
-        slice block_cs = block.begin_parse();
-        slice block_header_cs = block_cs~load_ref().begin_parse();
-        slice block_data_cs = block_cs~load_ref().begin_parse();
+            slice block_cs = block.begin_parse();
+            slice block_header_cs = block_cs~load_ref().begin_parse();
+            slice block_data_cs = block_cs~load_ref().begin_parse();
 
-        (slice block_header_id_cs, int root_hash) = verify_block_header(block_header_cs);
+            (slice block_header_id_cs, int root_hash) = verify_block_header(block_header_cs);
 
-        slice block_info = verify_and_parse_block_data(block_data_cs, block_header_id_cs);
+            slice block_info = verify_and_parse_block_data(block_data_cs, block_header_id_cs);
 
-        (_, int gen_utime, int seq_no) = load_block_data(block_info);
-        (int block_header_id_workchain, int block_header_id_seqno, _, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
-        throw_unless(0xf022, (blocks_workchain)?(gen_utime >= utime_since) & (gen_utime < utime_until):(gen_utime > utime_since) & (gen_utime <= utime_until));
-        throw_unless(0xf023, seq_no == block_header_id_seqno);
-        throw_unless(0xf007, block_header_id_workchain == -1);
+            (_, int gen_utime, int seq_no) = load_block_data(block_info);
+            (int block_header_id_workchain, int block_header_id_seqno, _, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
+            throw_unless(0xf022, (blocks_workchain)?(gen_utime >= utime_since) & (gen_utime < utime_until):(gen_utime > utime_since) & (gen_utime <= utime_until));
+            throw_unless(0xf023, seq_no == block_header_id_seqno);
+            throw_unless(0xf007, block_header_id_workchain == -1);
 
-        slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
+            slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
 
-        if (seqno == block_header_id_seqno) {
-            if (slice_data_empty?(next_validator_set.begin_parse())) {
-                verify_signatures(prev_validator_set, signatures, message);
+            if (seqno == block_header_id_seqno) {
+                if (slice_data_empty?(next_validator_set.begin_parse())) {
+                    verify_signatures(prev_validator_set, signatures, message);
+                } else {
+                    verify_signatures(cur_validator_set, signatures, message);
+                }
             } else {
                 verify_signatures(cur_validator_set, signatures, message);
             }
-        } else {
-            verify_signatures(cur_validator_set, signatures, message);
+            
+            var correct_msg_body = begin_cell()
+                            .store_uint(op::correct, 32)
+                            .store_uint(query_id, 64)
+                            .store_uint(root_hash, 256)
+                            .end_cell();
+            var msg = begin_cell()
+                    .store_uint(0x18, 6)
+                    .store_slice(sender_address)
+                    .store_coins(0)
+                    .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(correct_msg_body);
+            send_raw_message(msg.end_cell(), 64);
+        } catch (x, n) {
+            var reject_msg_body = begin_cell()
+                            .store_uint(op::reject, 32)
+                            .store_uint(query_id, 64)
+                            .end_cell();
+            var msg = begin_cell()
+                    .store_uint(0x18, 6)
+                    .store_slice(sender_address)
+                    .store_coins(0)
+                    .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(reject_msg_body);
+            send_raw_message(msg.end_cell(), 64);
         }
-        
-        var correct_msg_body = begin_cell()
-                        .store_uint(op::correct, 32)
-                        .store_uint(query_id, 64)
-                        .store_uint(root_hash, 256)
-                        .end_cell();
-        var msg = begin_cell()
-                .store_uint(0x18, 6)
-                .store_slice(sender_address)
-                .store_coins(0)
-                .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-                .store_ref(correct_msg_body);
-        send_raw_message(msg.end_cell(), 64);
 
         return ();
     }
 
     throw(error::unknown_opcode);
+}
+
+(cell) get_prev_validator_set() method_id {
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    return prev_validator_set;
+}
+
+(cell) get_cur_validator_set() method_id {
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    return cur_validator_set;
+}
+
+(cell) get_next_validator_set() method_id {
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    return next_validator_set;
 }
 
 (int) get_utime_since() method_id {

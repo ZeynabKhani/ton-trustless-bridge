@@ -127,9 +127,6 @@ describe('LiteClient', () => {
             success: true,
             op: Op.correct,
         });
-        result.transactions.forEach((tx) => {
-            console.log(tx.totalFees);
-        });
     });
 
     it('should check a key block that starts a new epoch', async () => {

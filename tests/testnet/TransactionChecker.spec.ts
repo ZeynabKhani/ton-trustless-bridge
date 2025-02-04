@@ -1,5 +1,5 @@
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
-import { Cell, toNano } from '@ton/core';
+import { beginCell, Cell, toNano } from '@ton/core';
 import { LiteClient } from '../../wrappers/LiteClient';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
@@ -8,7 +8,7 @@ import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
 import { liteServer_blockHeader } from 'ton-lite-client/dist/schema';
 import { ValidatorSignature } from '@oraichain/tonbridge-utils';
 import { TransactionChecker } from '../../wrappers/TransactionChecker';
-import { Op } from '../../wrappers/Constants';
+import { Op, Error } from '../../wrappers/Constants';
 
 describe('TransactionChecker', () => {
     let transactionChecker: SandboxContract<TransactionChecker>;
@@ -25,9 +25,10 @@ describe('TransactionChecker', () => {
     let txData: any;
     let txWithProof: any;
     const workchain = 0;
+    const blocksWorkchain = -1;
 
     beforeAll(async () => {
-        liteClientCode = await compile('FastnetLiteClient');
+        liteClientCode = await compile('LiteClient');
         transactionCheckerCode = await compile('TransactionChecker');
     });
 
@@ -44,7 +45,7 @@ describe('TransactionChecker', () => {
         };
 
         const { curValidatorSet, prevValidatorSet, nextValidatorSet, utime_since, utime_until } =
-            LiteClient.getInitialDataConfig(initialBlock, workchain);
+            LiteClient.getInitialDataConfig(initialBlock, blocksWorkchain);
 
         liteClient = blockchain.openContract(
             LiteClient.createFromConfig(
@@ -55,6 +56,7 @@ describe('TransactionChecker', () => {
                     utime_since,
                     utime_until,
                     seqno: initialBlock.id.seqno,
+                    blocks_workchain: blocksWorkchain,
                 },
                 liteClientCode,
                 workchain,
@@ -76,6 +78,7 @@ describe('TransactionChecker', () => {
             TransactionChecker.createFromConfig(
                 {
                     lite_client: liteClient.address,
+                    queries_cnt: 0n,
                 },
                 transactionCheckerCode,
                 workchain,
@@ -126,7 +129,6 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            workchain,
             toNano('5'),
         );
         expect(result.transactions).toHaveTransaction({
@@ -158,7 +160,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            workchain,
+            blocksWorkchain,
             toNano('1.5'),
         );
         expect(result.transactions).toHaveTransaction({
@@ -183,7 +185,6 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            workchain,
             toNano('4.5'),
         );
         expect(result2.transactions).toHaveTransaction({
@@ -194,18 +195,168 @@ describe('TransactionChecker', () => {
         });
     });
 
-    // it('should reject', async () => {
-    //     await transactionChecker.sendCheckTransaction(
-    //         deployer.getSender(),
-    //         txWithProof,
-    //         blockHeader,
-    //         block,
-    //         signatures,
-    //         workchain,
-    //         toNano('4.5'),
-    //     );
-    //     expect((await transactionChecker.getKey(0n)).toString()).toBe(deployer.address.toString());
-    //     // await transactionChecker.sendReject(lt.getSender());
-    //     // expect ((await transactionChecker.getKey(0n)).toString()).toBe("0")
-    // });
+    it('should fail because transaction data is not correct', async () => {
+        const blockDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock1.json'), 'utf8');
+        blockData = JSON.parse(blockDataRaw);
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = blockData.signatures;
+
+        const txDataRaw = fs.readFileSync(require.resolve('../fastnet/txDataFromKeyBlock1.json'), 'utf8');
+        txData = JSON.parse(txDataRaw);
+        txWithProof = {
+            kind: txData.kind,
+            id: txData.id,
+            proof: txData.proof,
+            transaction: txData.transaction,
+        };
+
+        txWithProof.transaction = beginCell().storeUint(12345, 32).endCell().toBoc();
+
+        let result = await transactionChecker.sendCheckTransaction(
+            deployer.getSender(),
+            txWithProof,
+            blockHeader,
+            block,
+            signatures,
+            toNano('5'),
+        );
+        expect(result.transactions).toHaveTransaction({
+            from: deployer.address,
+            to: transactionChecker.address,
+            exitCode: Error.transaction_not_in_block,
+            success: false,
+        });
+    });
+
+    it('should fail because tx proof root hash does not match block root hash', async () => {
+        const blockDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock1.json'), 'utf8');
+        blockData = JSON.parse(blockDataRaw);
+
+        const block2DataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock2.json'), 'utf8');
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: JSON.parse(block2DataRaw).header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = blockData.signatures;
+
+        const txDataRaw = fs.readFileSync(require.resolve('../fastnet/txDataFromKeyBlock1.json'), 'utf8');
+        txData = JSON.parse(txDataRaw);
+        txWithProof = {
+            kind: txData.kind,
+            id: txData.id,
+            proof: txData.proof,
+            transaction: txData.transaction,
+        };
+
+        let result = await transactionChecker.sendCheckTransaction(
+            deployer.getSender(),
+            txWithProof,
+            blockHeader,
+            block,
+            signatures,
+            toNano('5'),
+        );
+        expect(result.transactions).toHaveTransaction({
+            from: liteClient.address,
+            to: transactionChecker.address,
+            op: Op.reject,
+            success: true,
+        });
+    });
+
+    it('should respond with nothing if block is rejected by lite client and remove request from the pending queries', async () => {
+        const blockDataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock1.json'), 'utf8');
+        blockData = JSON.parse(blockDataRaw);
+
+        const block2DataRaw = fs.readFileSync(require.resolve('../fastnet/keyblock2.json'), 'utf8');
+
+        blockHeader = {
+            kind: blockData.header.kind,
+            id: blockData.header.id,
+            mode: blockData.header.mode,
+            headerProof: blockData.header.headerProof,
+        };
+        block = {
+            kind: blockData.block.kind,
+            id: blockData.block.id,
+            data: blockData.block.data,
+        };
+        signatures = JSON.parse(block2DataRaw).signatures;
+
+        const txDataRaw = fs.readFileSync(require.resolve('../fastnet/txDataFromKeyBlock1.json'), 'utf8');
+        txData = JSON.parse(txDataRaw);
+        txWithProof = {
+            kind: txData.kind,
+            id: txData.id,
+            proof: txData.proof,
+            transaction: txData.transaction,
+        };
+
+        let result = await transactionChecker.sendCheckTransaction(
+            deployer.getSender(),
+            txWithProof,
+            blockHeader,
+            block,
+            signatures,
+            toNano('5'),
+        );
+
+        expect(result.transactions).toHaveTransaction({
+            from: liteClient.address,
+            to: transactionChecker.address,
+            op: Op.reject,
+            success: true,
+        });
+
+        expect((await transactionChecker.getKey(0n)).toString()).toBe('0');
+    });
+
+    it('only lite client can call correct opcode', async () => {
+        let result = await transactionChecker.sendCorrect(deployer.getSender());
+        expect(result.transactions).toHaveTransaction({
+            from: deployer.address,
+            to: transactionChecker.address,
+            success: false,
+            exitCode: Error.unauthorized,
+        });
+    });
+
+    it('only lite client can call correct opcode', async () => {
+        let result = await transactionChecker.sendReject(deployer.getSender());
+        expect(result.transactions).toHaveTransaction({
+            from: deployer.address,
+            to: transactionChecker.address,
+            success: false,
+            exitCode: Error.unauthorized,
+        });
+    });
+
+    it('can not call arbitrary opcode', async () => {
+        let result = await transactionChecker.sendRandomOpcode(deployer.getSender());
+        expect(result.transactions).toHaveTransaction({
+            from: deployer.address,
+            to: transactionChecker.address,
+            success: false,
+            exitCode: Error.unknown_opcode,
+        });
+    });
 });

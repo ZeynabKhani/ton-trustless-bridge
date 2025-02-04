@@ -1,0 +1,18 @@
+#include "./stdlib.fc";
+
+(slice, int) parse_exotic(cell x) asm "XCTOS";
+int hash_at_level(cell x, int i) asm "CHASHIX";
+int slice_hash_2(builder b1, builder b2, int n) asm "HASHEXT_SHA256";
+int check_signature_for_slice(slice message, slice signature, int public_key) asm "CHKSIGNS";
+
+(slice) verify_and_parse_merkle_proof_cell(cell merkle_proof_cell) impure inline {
+    (slice merkle_proof_cs, int is_exotic) = parse_exotic(merkle_proof_cell);
+    throw_unless(0xf001, is_exotic == -1);
+    throw_unless(0xf002, slice_bits(merkle_proof_cs) == 280);
+    throw_unless(0xf003, merkle_proof_cs~load_uint(8) == 3);
+
+    ;; int root_hash = hash_at_level(merkle_proof_cs~load_ref(), 0);
+    ;; throw_unless(0xf004, root_hash == merkle_proof_cs~load_uint(256));
+    ;; return root_hash;
+    return merkle_proof_cs;
+}
