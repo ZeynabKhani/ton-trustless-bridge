@@ -4,7 +4,9 @@
     "scripts": {
         "start": "blueprint run",
         "build": "blueprint build",
-        "test": "jest --verbose --detectOpenHandles"
+        "test": "jest --verbose --detectOpenHandles",
+        "deploy-lite-client:testnet": "blueprint run testnet/deployLiteClient --testnet --mnemonic",
+        "deploy-transaction-checker:testnet": "blueprint run testnet/deployTransactionChecker --testnet --mnemonic"
     },
     "devDependencies": {
         "@tact-lang/compiler": "^1.5.3",

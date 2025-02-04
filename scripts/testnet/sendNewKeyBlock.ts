@@ -36,6 +36,27 @@ export async function run(provider: NetworkProvider) {
         ),
     );
 
-    await liteClient.sendDeploy(provider.sender(), toNano('0.05'));
-    await provider.waitForDeploy(liteClient.address);
+    let testDataRaw = fs.readFileSync(require.resolve('../../tests/fastnet/keyblock2.json'), 'utf8');
+    let blockData = JSON.parse(testDataRaw);
+
+    let blockHeader = {
+        kind: blockData.header.kind,
+        id: blockData.header.id,
+        mode: blockData.header.mode,
+        headerProof: blockData.header.headerProof,
+    };
+    let block = {
+        kind: blockData.block.kind,
+        id: blockData.block.id,
+        data: blockData.block.data,
+    };
+    let signatures = blockData.signatures;
+    await liteClient.sendNewKeyBlock(
+        provider.sender(),
+        blockHeader,
+        block,
+        signatures,
+        blocksWorkchain,
+        toNano('0.05'),
+    );
 }
