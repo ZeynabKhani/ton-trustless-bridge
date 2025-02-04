@@ -193,9 +193,7 @@ describe('TransactionChecker', () => {
             op: Op.transaction_checked,
             success: true,
         });
-        result.transactions.forEach((tx) => {
-            console.log(tx.totalFees);
-        });
+        
     });
 
     it('should fail because transaction data is not correct', async () => {
