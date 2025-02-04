@@ -18,9 +18,10 @@ describe('LiteClient', () => {
     let initialBlock: liteServer_BlockData;
     let signatures: ValidatorSignature[];
     const workchain: number = 0;
+    const blocksWorkchain: number = -1;
 
     beforeAll(async () => {
-        code = await compile('FastnetLiteClient');
+        code = await compile('LiteClient');
     });
 
     let blockchain: Blockchain;
@@ -40,7 +41,7 @@ describe('LiteClient', () => {
         };
 
         const { curValidatorSet, prevValidatorSet, nextValidatorSet, utime_since, utime_until } =
-            LiteClient.getInitialDataConfig(initialBlock, workchain);
+            LiteClient.getInitialDataConfig(initialBlock, blocksWorkchain);
 
         liteClient = blockchain.openContract(
             LiteClient.createFromConfig(
@@ -51,6 +52,7 @@ describe('LiteClient', () => {
                     utime_since,
                     utime_until,
                     seqno: initialBlock.id.seqno,
+                    blocks_workchain: blocksWorkchain,
                 },
                 code,
                 workchain,
@@ -90,7 +92,7 @@ describe('LiteClient', () => {
             blockHeader,
             block,
             signatures,
-            workchain,
+            blocksWorkchain,
             toNano('0.05'),
         );
         expect(result.transactions).toHaveTransaction({
@@ -154,7 +156,7 @@ describe('LiteClient', () => {
             blockHeader,
             block,
             signatures,
-            workchain,
+            blocksWorkchain,
             toNano('0.05'),
         );
         expect(result.transactions).toHaveTransaction({
@@ -186,7 +188,7 @@ describe('LiteClient', () => {
             blockHeader,
             block,
             signatures,
-            workchain,
+            blocksWorkchain,
             toNano('0.05'),
         );
         expect(result.transactions).toHaveTransaction({

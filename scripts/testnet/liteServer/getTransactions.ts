@@ -7,6 +7,7 @@ import { LiteClient, LiteEngine, LiteRoundRobinEngine, LiteSingleEngine } from '
 import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
 import { BlockID } from 'ton-lite-client/dist';
 import * as fs from 'fs';
+import { loadBlockExtra } from '@oraichain/tonbridge-utils/build/blockchain/BlockParser';
 
 export function intToIP(int: number) {
     var part1 = int & 255;
@@ -27,7 +28,7 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
 }
 
 (async () => {
-    const jsonData = fs.readFileSync(require.resolve('./testnet-global-config.json'), 'utf8');
+    const jsonData = fs.readFileSync('scripts/testnet/testnet-global-config.json', 'utf8');
     const data = JSON.parse(jsonData);
 
     // const { liteservers } = await fetch('https://ton.org/global-config.json').then((data) => data.json());
@@ -46,7 +47,7 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
     const client = new LiteClient({ engine });
 
     // Find an account transaction in a key block
-    const initialDataRaw = fs.readFileSync(require.resolve('../../tests/testnet/keyblock1.json'), 'utf8');
+    const initialDataRaw = fs.readFileSync('tests/testnet/keyblock2.json', 'utf8');
     let initialData = JSON.parse(initialDataRaw);
     let blockInfo: BlockID = initialData.header.id;
     blockInfo.rootHash = Buffer.from(blockInfo.rootHash);
@@ -70,33 +71,60 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
         blockId: rawTxs.ids[i],
     }));
 
-    let existingData = {};
     for (let tx of txs) {
+        const raw = tx.tx.raw.beginParse();
+        // const g = raw.loadRef().beginParse();
+        // console.log(raw.loadUint(32));
+        console.log(raw.loadUintBig(4));
+        console.log(raw.loadUintBig(256));
+        console.log(raw.loadUintBig(64));
+        console.log(raw.loadUintBig(256));
+        console.log(raw.loadUintBig(64));
+        console.log('now:', raw.loadUintBig(32));
+
+        console.log();
+        const hashFromData = tx.tx.raw.hash().toString('hex');
+        const wantedTxHash = tx.tx.hash().toString('hex');
+        assert(hashFromData === wantedTxHash);
         // Query the transaction proof
         const txWithProof = await client.getAccountTransaction(addr, tx.tx.lt.toString(10), tx.blockId);
         if (txWithProof.id.seqno == initialData.header.id.seqno) {
-            existingData = {};
-            if (fs.existsSync('tests/testnet/txDataFromKeyBlock1.json')) {
-                existingData = JSON.parse(fs.readFileSync('tests/testnet/txDataFromKeyBlock1.json', 'utf8'));
-            }
-
             const txProof = await TonRocks.types.Cell.fromBoc(txWithProof.proof);
+
             const txProofFirstRef: TonRocksCell = txProof[0].refs[0];
 
             // Prove that the transaction proof is related to our verified block
             const txProofHash = txProofFirstRef.hashes[0];
             assert(Buffer.from(txProofHash).toString('hex') === tx.blockId.rootHash.toString('hex'));
 
+            // parse block to get block transactions
+            const blockExtraCell: TonRocksCell = txProofFirstRef.refs[3];
+            const parsedBlockFromTxProof = loadBlockExtra(blockExtraCell, {
+                cs: 0,
+                ref: 0,
+            });
+            const accountBlocks = parsedBlockFromTxProof.account_blocks.map;
+            let foundWantedTxHash = false;
+            for (const entry of accountBlocks.entries()) {
+                const txs = entry[1].value.transactions.map;
+                for (const [_key, tx] of txs.entries()) {
+                    const txCell: TonRocksCell = tx.value;
+                    if (tx.value) {
+                        const txHash = Buffer.from(txCell.getHash(0)).toString('hex');
+                        if (txHash === wantedTxHash) foundWantedTxHash = true;
+                    }
+                }
+            }
+            assert(foundWantedTxHash);
+
             const txData = {
-                id: txWithProof.id,
+                transaction: tx.tx.raw.toBoc(),
                 proof: txWithProof.proof,
-                transaction: txWithProof.transaction,
-                rootHash: Buffer.from(txProofHash).toString('hex'),
+                blockId: txWithProof.id,
             };
 
-            const mergedData = { ...existingData, ...txData };
-            fs.writeFileSync('tests/testnet/txDataFromKeyBlock1.json', JSON.stringify(mergedData, null, 2));
-            console.log('tx with proof written to tests/testnet/txDataFromKeyBlock1.json');
+            fs.writeFileSync('tests/testnet/txDataFromKeyBlock2.json', JSON.stringify(txData, null, 2));
+            console.log('tx with proof written to tests/testnet/txDataFromKeyBlock2.json');
         }
     }
     engine.close();

@@ -177,6 +177,7 @@ async function verifyMasterchainBlock(
             kind: 'liteServer.getBlock',
             id: blockInfo,
         });
+        const f = await TonRocks.types.Cell.fromBoc(block.data);
         parsedBlock = await parseBlock(block);
         if (!parsedBlock.info.key_block) {
             const keyBlockInfo = await client.getFullBlock(parsedBlock.info.prev_key_block_seqno);
@@ -193,6 +194,11 @@ async function verifyMasterchainBlock(
             continue;
         }
         try {
+            parsedBlock.info.seq_no;
+            block.id;
+
+            block.data;
+
             validatorSet = parsedBlock.extra?.custom?.config?.config?.map?.get('22');
             if (validatorSet === undefined) {
                 console.log('No validator set found in config (key 22)');
@@ -206,8 +212,8 @@ async function verifyMasterchainBlock(
         if (counter === 0) {
             const testData = {
                 block: {
-                    kind: block.kind,
-                    id: block.id,
+                    // kind: block.kind,
+                    // id: block.id,
                     data: block.data,
                 },
             };
@@ -230,11 +236,12 @@ async function verifyMasterchainBlock(
     }
 
     const blockHeader = await client.getBlockHeader(blockInfo);
+    const g = blockHeader.id;
     const testData = {
         header: {
             id: blockHeader.id,
             headerProof: blockHeader.headerProof,
-            mode: blockHeader.mode,
+            // mode: blockHeader.mode,
         },
     };
     let existingData = {};

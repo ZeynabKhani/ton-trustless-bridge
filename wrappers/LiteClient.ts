@@ -29,6 +29,7 @@ export type LiteClientConfig = {
     utime_since: number;
     utime_until: number;
     seqno: number;
+    blocks_workchain: number;
 };
 
 export function liteClientConfigToCell(config: LiteClientConfig): Cell {
@@ -39,6 +40,7 @@ export function liteClientConfigToCell(config: LiteClientConfig): Cell {
         .storeUint(config.utime_since, 32)
         .storeUint(config.utime_until, 32)
         .storeInt(config.seqno, 32)
+        .storeInt(BigInt(config.blocks_workchain), 1)
         .endCell();
 }
 
@@ -123,167 +125,174 @@ export class LiteClient implements Contract {
         });
     }
 
-    static getTestnetValidatorSet(McBlockExtra: Slice) {
-        McBlockExtra.loadRef(); // shard_hashes
-        McBlockExtra.loadRef(); // shard_fees
-        McBlockExtra.loadRef(); // additional_info
+    static getValidatorSet(McBlockExtra: Slice, workchain: number) {
+        if (workchain == -1) {
+            McBlockExtra.loadRef(); // additional_info
+            McBlockExtra.loadUintBig(267); // config_address
 
-        let curValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
-            Dictionary.Keys.Uint(16),
-            ValidatorDescrValue(),
-        );
-        let prevValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
-            Dictionary.Keys.Uint(16),
-            ValidatorDescrValue(),
-        );
-        let nextValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
-            Dictionary.Keys.Uint(16),
-            ValidatorDescrValue(),
-        );
-        let utime_since: number = 0;
-        let utime_until: number = 0;
-        let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
-        // McBlockExtra.loadBits(75); // not sure what this is
-        // McBlockExtra.loadBits(256); // config_address
+            let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
+            let utime_since: number = 0;
+            let utime_until: number = 0;
+            let total: number = 0;
+            let main: number = 0;
 
-        // loading current validator set
-        let configParam34 = configParamsCell.get(34)!.beginParse();
-        const type = configParam34.loadUint(8);
-        utime_since = configParam34.loadUint(32);
-        utime_until = configParam34.loadUint(32);
-        const total = configParam34.loadUint(16);
-        const main = configParam34.loadUint(16);
-        if (total! < main!) throw Error('data.total < data.main');
-        if (main! < 1) throw Error('data.main < 1');
-        if (type === 0x11) {
-            curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-            // console.log(type, utime_since, utime_until, total, main, list);
-        } else if (type === 0x12) {
-            // type = 'ext';
-            const total_weight = configParam34.loadUintBig(64);
-            curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-            // console.log(type, utime_since, utime_until, total, main, total_weight, list);
-        }
+            let curValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+                Dictionary.Keys.Uint(16),
+                ValidatorDescrValue(),
+            );
+            let prevValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+                Dictionary.Keys.Uint(16),
+                ValidatorDescrValue(),
+            );
+            let nextValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+                Dictionary.Keys.Uint(16),
+                ValidatorDescrValue(),
+            );
 
-        // loading previous validator set
-        let configParam32 = configParamsCell.get(32)!.beginParse();
-        configParam32.loadUintBig(8 + 32 + 32 + 16 + 16);
-        if (type === 0x11) {
-            prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-        } else if (type === 0x12) {
-            configParam32.loadUintBig(64);
-            prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-        }
-
-        // loading next validator set
-        let configParam36 = configParamsCell.get(36)?.beginParse();
-        if (configParam36) {
-            configParam36.loadUintBig(8 + 32 + 32 + 16 + 16);
-            if (type === 0x11) {
-                nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-            } else if (type === 0x12) {
-                configParam36.loadUintBig(64);
-                nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            // Check if param 34 exists
+            const param34 = configParamsCell.get(34);
+            if (!param34) {
+                console.log('Config param 34 not found in fastnet');
+                return {
+                    utime_since,
+                    utime_until,
+                    curValidatorSet,
+                    prevValidatorSet,
+                    nextValidatorSet,
+                };
             }
-        }
 
-        return {
-            curValidatorSet,
-            prevValidatorSet,
-            nextValidatorSet,
-            utime_since,
-            utime_until,
-        };
-    }
+            let configParam34 = param34.beginParse();
 
-    static getFastnetValidatorSet(McBlockExtra: Slice) {
-        McBlockExtra.loadRef(); // additional_info
-        McBlockExtra.loadUintBig(267); // config_address
+            const type = configParam34.loadUint(8);
+            utime_since = configParam34.loadUint(32);
+            utime_until = configParam34.loadUint(32);
+            total = configParam34.loadUint(16);
+            main = configParam34.loadUint(16);
 
-        let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
-        let utime_since: number = 0;
-        let utime_until: number = 0;
-        let total: number = 0;
-        let main: number = 0;
+            if (type === 0x11) {
+                curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                // console.log(type, utime_since, utime_until, total, main, list);
+            } else if (type === 0x12) {
+                // type = 'ext';
+                const total_weight = configParam34.loadUintBig(64);
+                curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                // console.log(type, utime_since, utime_until, total, main, total_weight, list);
+            }
 
-        let curValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
-            Dictionary.Keys.Uint(16),
-            ValidatorDescrValue(),
-        );
-        let prevValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
-            Dictionary.Keys.Uint(16),
-            ValidatorDescrValue(),
-        );
-        let nextValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
-            Dictionary.Keys.Uint(16),
-            ValidatorDescrValue(),
-        );
+            // loading previous validator set
+            let configParam32 = configParamsCell.get(32)!.beginParse();
+            configParam32.loadUintBig(8 + 32 + 32 + 16 + 16);
+            if (type === 0x11) {
+                prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            } else if (type === 0x12) {
+                configParam32.loadUintBig(64);
+                prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            }
 
-        // Check if param 34 exists
-        const param34 = configParamsCell.get(34);
-        if (!param34) {
-            console.log('Config param 34 not found in fastnet');
+            // loading next validator set
+            let configParam36 = configParamsCell.get(36)?.beginParse();
+            if (configParam36) {
+                configParam36.loadUintBig(8 + 32 + 32 + 16 + 16);
+                if (type === 0x11) {
+                    nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                } else if (type === 0x12) {
+                    configParam36.loadUintBig(64);
+                    nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                }
+            }
+
             return {
-                utime_since,
-                utime_until,
                 curValidatorSet,
                 prevValidatorSet,
                 nextValidatorSet,
+                utime_since,
+                utime_until,
+            };
+        } else if (workchain == 0) {
+            McBlockExtra.loadRef(); // shard_hashes
+            McBlockExtra.loadRef(); // shard_fees
+            McBlockExtra.loadRef(); // additional_info
+
+            let curValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+                Dictionary.Keys.Uint(16),
+                ValidatorDescrValue(),
+            );
+            let prevValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+                Dictionary.Keys.Uint(16),
+                ValidatorDescrValue(),
+            );
+            let nextValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
+                Dictionary.Keys.Uint(16),
+                ValidatorDescrValue(),
+            );
+            let utime_since: number = 0;
+            let utime_until: number = 0;
+            let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
+            // McBlockExtra.loadBits(75); // not sure what this is
+            // McBlockExtra.loadBits(256); // config_address
+
+            // loading current validator set
+            let configParam34 = configParamsCell.get(34)!.beginParse();
+            const type = configParam34.loadUint(8);
+            utime_since = configParam34.loadUint(32);
+            utime_until = configParam34.loadUint(32);
+            const total = configParam34.loadUint(16);
+            const main = configParam34.loadUint(16);
+            if (total! < main!) throw Error('data.total < data.main');
+            if (main! < 1) throw Error('data.main < 1');
+            if (type === 0x11) {
+                curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                // console.log(type, utime_since, utime_until, total, main, list);
+            } else if (type === 0x12) {
+                // type = 'ext';
+                const total_weight = configParam34.loadUintBig(64);
+                curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                // console.log(type, utime_since, utime_until, total, main, total_weight, list);
+            }
+
+            // loading previous validator set
+            let configParam32 = configParamsCell.get(32)!.beginParse();
+            configParam32.loadUintBig(8 + 32 + 32 + 16 + 16);
+            if (type === 0x11) {
+                prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            } else if (type === 0x12) {
+                configParam32.loadUintBig(64);
+                prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+            }
+
+            // loading next validator set
+            let configParam36 = configParamsCell.get(36)?.beginParse();
+            if (configParam36) {
+                configParam36.loadUintBig(8 + 32 + 32 + 16 + 16);
+                if (type === 0x11) {
+                    nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                } else if (type === 0x12) {
+                    configParam36.loadUintBig(64);
+                    nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
+                }
+            }
+
+            return {
+                curValidatorSet,
+                prevValidatorSet,
+                nextValidatorSet,
+                utime_since,
+                utime_until,
             };
         }
-
-        let configParam34 = param34.beginParse();
-
-        const type = configParam34.loadUint(8);
-        utime_since = configParam34.loadUint(32);
-        utime_until = configParam34.loadUint(32);
-        total = configParam34.loadUint(16);
-        main = configParam34.loadUint(16);
-
-        if (type === 0x11) {
-            curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-            // console.log(type, utime_since, utime_until, total, main, list);
-        } else if (type === 0x12) {
-            // type = 'ext';
-            const total_weight = configParam34.loadUintBig(64);
-            curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-            // console.log(type, utime_since, utime_until, total, main, total_weight, list);
-        }
-
-        // loading previous validator set
-        let configParam32 = configParamsCell.get(32)!.beginParse();
-        configParam32.loadUintBig(8 + 32 + 32 + 16 + 16);
-        if (type === 0x11) {
-            prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-        } else if (type === 0x12) {
-            configParam32.loadUintBig(64);
-            prevValidatorSet = configParam32.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-        }
-
-        // loading next validator set
-        let configParam36 = configParamsCell.get(36)?.beginParse();
-        if (configParam36) {
-            configParam36.loadUintBig(8 + 32 + 32 + 16 + 16);
-            if (type === 0x11) {
-                nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-            } else if (type === 0x12) {
-                configParam36.loadUintBig(64);
-                nextValidatorSet = configParam36.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-            }
-        }
-
         return {
-            curValidatorSet,
-            prevValidatorSet,
-            nextValidatorSet,
-            utime_since,
-            utime_until,
+            curValidatorSet: Dictionary.empty(Dictionary.Keys.Uint(16), ValidatorDescrValue()),
+            prevValidatorSet: Dictionary.empty(Dictionary.Keys.Uint(16), ValidatorDescrValue()),
+            nextValidatorSet: Dictionary.empty(Dictionary.Keys.Uint(16), ValidatorDescrValue()),
+            utime_since: 0,
+            utime_until: 0,
         };
     }
 
     static getInitialDataConfig(block: liteServer_BlockData, workchain: number) {
         const data = Cell.fromBoc(Buffer.from(block.data))[0].beginParse();
-        data.loadUint(32);
+        data.loadUint(32); // magic
         data.loadInt(32); // global_id
         const info = data.loadRef().beginParse();
         info.loadUint(32);
@@ -319,21 +328,12 @@ export class LiteClient implements Contract {
         let utime_since: number = 0;
         let utime_until: number = 0;
         if (key_block) {
-            if (workchain == -1) {
-                const testnetValidatorSet = LiteClient.getTestnetValidatorSet(McBlockExtra);
-                curValidatorSet = testnetValidatorSet.curValidatorSet;
-                prevValidatorSet = testnetValidatorSet.prevValidatorSet;
-                nextValidatorSet = testnetValidatorSet.nextValidatorSet;
-                utime_since = testnetValidatorSet.utime_since;
-                utime_until = testnetValidatorSet.utime_until;
-            } else if (workchain == 0) {
-                const fastnetValidatorSet = LiteClient.getFastnetValidatorSet(McBlockExtra);
-                curValidatorSet = fastnetValidatorSet.curValidatorSet;
-                prevValidatorSet = fastnetValidatorSet.prevValidatorSet;
-                nextValidatorSet = fastnetValidatorSet.nextValidatorSet;
-                utime_since = fastnetValidatorSet.utime_since;
-                utime_until = fastnetValidatorSet.utime_until;
-            }
+            const validatorSet = LiteClient.getValidatorSet(McBlockExtra, workchain);
+            curValidatorSet = validatorSet.curValidatorSet;
+            prevValidatorSet = validatorSet.prevValidatorSet;
+            nextValidatorSet = validatorSet.nextValidatorSet;
+            utime_since = validatorSet.utime_since;
+            utime_until = validatorSet.utime_until;
         }
 
         return {
@@ -363,14 +363,14 @@ export class LiteClient implements Contract {
         info.loadUintBig(2 + 6 + 32 + 64);
         const gen_utime = info.loadUint(32);
         // console.log('gen_utime', gen_utime);
-        data.loadRef();
-        data.loadRef();
+        data.loadRef(); // value_flow
+        data.loadRef(); // state_update
         const extra = data.loadRef().beginParse();
         extra.loadUint(32);
-        extra.loadRef();
-        extra.loadRef();
-        extra.loadRef();
-        extra.loadUintBig(256);
+        extra.loadRef(); // in_msg_descr
+        extra.loadRef(); // out_msg_descr
+        extra.loadRef(); // account_blocks
+        extra.loadUintBig(256); // rand seed
         extra.loadUintBig(256); // created_by
         const McBlockExtra = extra.loadRef().beginParse(); // or custom
         McBlockExtra.loadUint(16); // magic cca5
@@ -391,21 +391,12 @@ export class LiteClient implements Contract {
         let utime_since: number = 0;
         let utime_until: number = 0;
         if (key_block) {
-            if (workchain == -1) {
-                const testnetValidatorSet = LiteClient.getTestnetValidatorSet(McBlockExtra);
-                curValidatorSet = testnetValidatorSet.curValidatorSet;
-                prevValidatorSet = testnetValidatorSet.prevValidatorSet;
-                nextValidatorSet = testnetValidatorSet.nextValidatorSet;
-                utime_since = testnetValidatorSet.utime_since;
-                utime_until = testnetValidatorSet.utime_until;
-            } else if (workchain == 0) {
-                const fastnetValidatorSet = LiteClient.getFastnetValidatorSet(McBlockExtra);
-                curValidatorSet = fastnetValidatorSet.curValidatorSet;
-                prevValidatorSet = fastnetValidatorSet.prevValidatorSet;
-                nextValidatorSet = fastnetValidatorSet.nextValidatorSet;
-                utime_since = fastnetValidatorSet.utime_since;
-                utime_until = fastnetValidatorSet.utime_until;
-            }
+            const validatorSet = LiteClient.getValidatorSet(McBlockExtra, workchain);
+            curValidatorSet = validatorSet.curValidatorSet;
+            prevValidatorSet = validatorSet.prevValidatorSet;
+            nextValidatorSet = validatorSet.nextValidatorSet;
+            utime_since = validatorSet.utime_since;
+            utime_until = validatorSet.utime_until;
         }
 
         let validatorSet = curValidatorSet;
@@ -461,40 +452,52 @@ export class LiteClient implements Contract {
         workchain: number,
     ) {
         const blockHeaderIdCell = beginCell()
-            .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
+            // .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
             .storeInt(blockHeader.id.workchain, 32)
-            .storeInt(BigInt(blockHeader.id.shard), 64)
+            // .storeInt(BigInt(blockHeader.id.shard), 64)
             .storeInt(blockHeader.id.seqno, 32)
             .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.rootHash).toString('hex')), 256)
             .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.fileHash).toString('hex')), 256)
             .endCell();
         const blockHeaderCell = beginCell()
-            .storeInt(0x752d8219, 32) // kind: liteServer.blockHeader
+            // .storeInt(0x752d8219, 32) // kind: liteServer.blockHeader
             .storeRef(blockHeaderIdCell) // id
-            .storeUint(blockHeader.mode, 32) // mode
+            // .storeUint(blockHeader.mode, 32) // mode
             .storeRef(Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0]) // header_proof
             .endCell();
 
-        const blockDataIdCell = beginCell()
-            .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
-            .storeInt(block.id.workchain, 32)
-            .storeInt(BigInt(block.id.shard), 64)
-            .storeInt(block.id.seqno, 32)
-            .storeUint(BigInt('0x' + Buffer.from(block.id.rootHash).toString('hex')), 256)
-            .storeUint(BigInt('0x' + Buffer.from(block.id.fileHash).toString('hex')), 256)
-            .endCell();
+        // const blockDataIdCell = beginCell()
+        //     // .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
+        //     .storeInt(block.id.workchain, 32)
+        //     // .storeInt(BigInt(block.id.shard), 64)
+        //     .storeInt(block.id.seqno, 32)
+        //     .storeUint(BigInt('0x' + Buffer.from(block.id.rootHash).toString('hex')), 256)
+        //     .storeUint(BigInt('0x' + Buffer.from(block.id.fileHash).toString('hex')), 256)
+        //     .endCell();
         const blockDataCell = beginCell()
-            .storeInt(0x6377cf0d, 32) // liteServer.getBlock
-            .storeRef(blockDataIdCell)
-            .storeRef(Cell.fromBoc(Buffer.from(block.data))[0])
+            // .storeInt(0x6377cf0d, 32) // liteServer.getBlock
+            // .storeRef(beginCell().endCell())
+            .storeRef(
+                LiteClient.pruneExceptBlockInfoAndMcBlockExtraConfigParams(
+                    Cell.fromBoc(Buffer.from(block.data))[0],
+                    workchain,
+                ),
+            )
             .endCell();
 
-        const message = Buffer.concat([
-            // magic prefix of message signing
-            Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
-            Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
-            Buffer.from(blockHeader.id.fileHash),
-        ]);
+        // console.log(
+        //     LiteClient.pruneExceptBlockInfoAndMcBlockExtraConfigParams(
+        //         Cell.fromBoc(Buffer.from(block.data))[0],
+        //     ).refs[0].hash(0),
+        // );
+        // console.log(Cell.fromBoc(Buffer.from(block.data))[0].hash(0));
+
+        // const message = Buffer.concat([
+        //     // magic prefix of message signing
+        //     Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
+        //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
+        //     Buffer.from(blockHeader.id.fileHash),
+        // ]);
         // LiteClient.testBlockData(blockDataCell, signatures, message, workchain);
 
         const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
@@ -519,46 +522,296 @@ export class LiteClient implements Contract {
         return messageBody;
     }
 
+    static testLevel() {
+        const A = beginCell().storeUint(0, 256).storeUint(100, 256).endCell();
+        const B = beginCell().storeRef(A).endCell();
+        const C = beginCell().endCell();
+        const E = beginCell().endCell();
+        const D = beginCell().storeRef(C).storeRef(B).storeRef(E).endCell();
+
+        console.log(A.hash(0).toString('hex'));
+
+        const prunnedC = new Cell({
+            exotic: true,
+            bits: beginCell()
+                .storeUint(1, 8) // type
+                .storeUint(1, 8) // level mask
+                .storeBuffer(C.hash(0)) // hash
+                .storeUint(C.depth(0), 16) // depth
+                .endCell().bits,
+            refs: [],
+        });
+
+        const prunnedE = new Cell({
+            exotic: true,
+            bits: beginCell()
+                .storeUint(1, 8) // type
+                .storeUint(1, 8) // level mask
+                .storeBuffer(E.hash(0)) // hash
+                .storeUint(E.depth(0), 16) // depth
+                .endCell().bits,
+            refs: [],
+        });
+
+        const merkleProofRef = beginCell().storeRef(prunnedC).storeRef(B).storeRef(prunnedE).endCell();
+
+        const merkleProofD = new Cell({
+            exotic: true,
+            bits: beginCell()
+                .storeUint(3, 8) // type
+                .storeBuffer(D.hash(0)) // hash
+                .storeUint(D.depth(0), 16) // depth
+                .endCell().bits,
+            refs: [merkleProofRef],
+        });
+
+        console.log(merkleProofD.refs[0].hash(0).toString('hex'));
+        console.log(D.hash(0).toString('hex'));
+    }
+
+    static createPrunedBranch(cell: Cell): Cell {
+        const prunedCell = new Cell({
+            exotic: true,
+            bits: beginCell()
+                .storeUint(1, 8) // type
+                .storeUint(1, 8) // level mask
+                .storeBuffer(cell.hash(0)) // hash
+                .storeUint(cell.depth(0), 16) // depth
+                .endCell().bits,
+            refs: [],
+        });
+        return prunedCell;
+    }
+
+    static pruneExceptBlockInfo(blockData: Cell): Cell {
+        // We keep the first 64 bits (magic + global_id) and the info cell reference
+        // but prune value_flow and state_update and extra
+        const c = blockData;
+        const cs = c.beginParse();
+        const magic = cs.loadUint(32);
+        const globalId = cs.loadInt(32);
+        const info = cs.loadRef();
+
+        const valueFlow = cs.loadRef();
+        const stateUpdate = cs.loadRef();
+        const extra = cs.loadRef();
+        const prunedValueFlow = LiteClient.createPrunedBranch(valueFlow);
+        const prunedStateUpdate = LiteClient.createPrunedBranch(stateUpdate);
+        const prunedExtra = LiteClient.createPrunedBranch(extra);
+
+        const merkleProofRef = beginCell()
+            .storeUint(magic, 32)
+            .storeInt(globalId, 32)
+            .storeRef(info)
+            .storeRef(prunedValueFlow)
+            .storeRef(prunedStateUpdate)
+            .storeRef(prunedExtra)
+            .endCell();
+
+        // Reconstruct the cell with pruned branches
+        const dataProofCell = new Cell({
+            exotic: true,
+            bits: beginCell()
+                .storeUint(3, 8) // type
+                .storeBuffer(c.hash(0)) // hash
+                .storeUint(c.depth(0), 16) // depth
+                .endCell().bits,
+            refs: [merkleProofRef],
+        });
+        return dataProofCell;
+    }
+
+    static pruneExceptBlockInfoAndMcBlockExtraConfigParams(blockData: Cell, workchain: number): Cell {
+        // We keep the first 64 bits (magic + global_id) and the info cell reference
+        // but prune value_flow and state_update and extra
+        const c = blockData;
+        const cs = c.beginParse();
+        const magic = cs.loadUint(32);
+        const globalId = cs.loadInt(32);
+        const info = cs.loadRef();
+
+        const valueFlow = cs.loadRef();
+        const stateUpdate = cs.loadRef();
+        const prunedValueFlow = LiteClient.createPrunedBranch(valueFlow);
+        const prunedStateUpdate = LiteClient.createPrunedBranch(stateUpdate);
+
+        const extra = cs.loadRef();
+        const extraCell = extra;
+        const extraSlice = extraCell.beginParse();
+        const extraMagic = extraSlice.loadUint(32);
+        const randSeed = extraSlice.loadUintBig(256);
+        const createdBy = extraSlice.loadUintBig(256);
+        const inMsgs = extraSlice.loadRef();
+        const outMsgs = extraSlice.loadRef();
+        const accountBlocks = extraSlice.loadRef();
+        const prunedInMsgs = LiteClient.createPrunedBranch(inMsgs);
+        const prunedOutMsgs = LiteClient.createPrunedBranch(outMsgs);
+        const prunedAccountBlocks = LiteClient.createPrunedBranch(accountBlocks);
+
+        const mcBlockExtra = extraSlice.loadRef();
+        const mcBlockExtraCell = mcBlockExtra;
+        const mcBlockExtraSlice = mcBlockExtraCell.beginParse();
+        const mcBlockExtraMagic = mcBlockExtraSlice.loadUint(16);
+        const isKeyBlock = mcBlockExtraSlice.loadUint(1);
+
+        if (workchain == 0) {
+            const shardHashes = mcBlockExtraSlice.loadRef();
+            const shardFees = mcBlockExtraSlice.loadRef();
+            const additionalData = mcBlockExtraSlice.loadRef();
+            const prunedShardHashes = LiteClient.createPrunedBranch(shardHashes);
+            const prunedShardFees = LiteClient.createPrunedBranch(shardFees);
+            const prunedAdditionalData = LiteClient.createPrunedBranch(additionalData);
+            const config = mcBlockExtraSlice.loadRef(); // config param dictionary
+
+            const remainingBits = mcBlockExtraSlice.remainingBits;
+            const mcBlockExtraRef = beginCell()
+                .storeUint(mcBlockExtraMagic, 16)
+                .storeUint(isKeyBlock, 1)
+                .storeRef(prunedShardHashes)
+                .storeRef(prunedShardFees)
+                .storeRef(prunedAdditionalData)
+                .storeRef(config)
+                .storeUint(mcBlockExtraSlice.loadUintBig(remainingBits - 256), remainingBits - 256)
+                .storeUint(mcBlockExtraSlice.loadUintBig(256), 256)
+                .endCell();
+
+            const extraRemainingBits = extraSlice.remainingBits;
+            const extraRef = beginCell()
+                .storeUint(extraMagic, 32)
+                .storeUint(randSeed, 256)
+                .storeUint(createdBy, 256)
+                .storeUint(extraSlice.loadUint(extraRemainingBits), extraRemainingBits)
+                .storeRef(prunedInMsgs)
+                .storeRef(prunedOutMsgs)
+                .storeRef(prunedAccountBlocks)
+                .storeRef(mcBlockExtraRef)
+                .endCell();
+
+            const merkleProofRef = beginCell()
+                .storeUint(magic, 32)
+                .storeInt(globalId, 32)
+                .storeRef(info)
+                .storeRef(prunedValueFlow)
+                .storeRef(prunedStateUpdate)
+                .storeRef(extraRef)
+                .endCell();
+
+            // Reconstruct the cell with pruned branches
+            const dataProofCell = new Cell({
+                exotic: true,
+                bits: beginCell()
+                    .storeUint(3, 8) // type
+                    .storeBuffer(c.hash(0)) // hash
+                    .storeUint(c.depth(0), 16) // depth
+                    .endCell().bits,
+                refs: [merkleProofRef],
+            });
+            return dataProofCell;
+        } else if (workchain == -1) {
+            // const shardHashes = mcBlockExtraSlice.loadRef();
+            // const shardFees = mcBlockExtraSlice.loadRef();
+            const additionalData = mcBlockExtraSlice.loadRef();
+            // const prunedShardHashes = LiteClient.createPrunedBranch(shardHashes);
+            // const prunedShardFees = LiteClient.createPrunedBranch(shardFees);
+            const prunedAdditionalData = LiteClient.createPrunedBranch(additionalData);
+            const remainingBits = mcBlockExtraSlice.remainingBits;
+            const remainingBits1 = mcBlockExtraSlice.loadUintBig(remainingBits - 256);
+            const remainingBits2 = mcBlockExtraSlice.loadUintBig(256);
+            const config = mcBlockExtraSlice.loadRef(); // config param dictionary
+
+            const mcBlockExtraRef = beginCell()
+                .storeUint(mcBlockExtraMagic, 16)
+                .storeUint(isKeyBlock, 1)
+                // .storeRef(prunedShardHashes)
+                // .storeRef(prunedShardFees)
+                .storeUint(remainingBits1, remainingBits - 256)
+                .storeUint(remainingBits2, 256)
+                .storeRef(prunedAdditionalData)
+                .storeRef(config)
+                .endCell();
+
+            const extraRemainingBits = extraSlice.remainingBits;
+            const extraRef = beginCell()
+                .storeUint(extraMagic, 32)
+                .storeUint(randSeed, 256)
+                .storeUint(createdBy, 256)
+                .storeUint(extraSlice.loadUint(extraRemainingBits), extraRemainingBits)
+                .storeRef(prunedInMsgs)
+                .storeRef(prunedOutMsgs)
+                .storeRef(prunedAccountBlocks)
+                .storeRef(mcBlockExtraRef)
+                .endCell();
+
+            const merkleProofRef = beginCell()
+                .storeUint(magic, 32)
+                .storeInt(globalId, 32)
+                .storeRef(info)
+                .storeRef(prunedValueFlow)
+                .storeRef(prunedStateUpdate)
+                .storeRef(extraRef)
+                .endCell();
+
+            // Reconstruct the cell with pruned branches
+            const dataProofCell = new Cell({
+                exotic: true,
+                bits: beginCell()
+                    .storeUint(3, 8) // type
+                    .storeBuffer(c.hash(0)) // hash
+                    .storeUint(c.depth(0), 16) // depth
+                    .endCell().bits,
+                refs: [merkleProofRef],
+            });
+            return dataProofCell;
+        }
+        return beginCell().endCell();
+    }
+
     static checkBlockMessage(
         blockHeader: liteServer_blockHeader,
         block: liteServer_BlockData,
         signatures: ValidatorSignature[],
     ) {
         const blockHeaderIdCell = beginCell()
-            .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
+            // .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
             .storeInt(blockHeader.id.workchain, 32)
-            .storeInt(BigInt(blockHeader.id.shard), 64)
+            // .storeInt(BigInt(blockHeader.id.shard), 64)
             .storeInt(blockHeader.id.seqno, 32)
             .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.rootHash).toString('hex')), 256)
             .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.fileHash).toString('hex')), 256)
             .endCell();
         const blockHeaderCell = beginCell()
-            .storeInt(0x752d8219, 32) // kind: liteServer.blockHeader
+            // .storeInt(0x752d8219, 32) // kind: liteServer.blockHeader
             .storeRef(blockHeaderIdCell) // id
-            .storeUint(blockHeader.mode, 32) // mode
+            // .storeUint(blockHeader.mode, 32) // mode
             .storeRef(Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0]) // header_proof
             .endCell();
 
-        const blockDataIdCell = beginCell()
-            .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
-            .storeInt(block.id.workchain, 32)
-            .storeInt(BigInt(block.id.shard), 64)
-            .storeInt(block.id.seqno, 32)
-            .storeUint(BigInt('0x' + Buffer.from(block.id.rootHash).toString('hex')), 256)
-            .storeUint(BigInt('0x' + Buffer.from(block.id.fileHash).toString('hex')), 256)
-            .endCell();
+        // const blockDataIdCell = beginCell()
+        //     // .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
+        //     .storeInt(block.id.workchain, 32)
+        //     // .storeInt(BigInt(block.id.shard), 64)
+        //     .storeInt(block.id.seqno, 32)
+        //     .storeUint(BigInt('0x' + Buffer.from(block.id.rootHash).toString('hex')), 256)
+        //     .storeUint(BigInt('0x' + Buffer.from(block.id.fileHash).toString('hex')), 256)
+        //     .endCell();
+        // const blockData = Cell.fromBoc(Buffer.from(block.data))[0];
+        // console.log(blockData.hash(0));
+        // console.log(Buffer.from(blockHeader.id.rootHash));
+        // const prunedData = LiteClient.pruneExceptBlockInfo(blockData);
+        // console.log(prunedData.refs[0].hash(0));
+
         const blockDataCell = beginCell()
-            .storeInt(0x6377cf0d, 32) // liteServer.getBlock
-            .storeRef(blockDataIdCell)
-            .storeRef(Cell.fromBoc(Buffer.from(block.data))[0])
+            // .storeInt(0x6377cf0d, 32) // liteServer.getBlock
+            // .storeRef(beginCell().endCell())
+            .storeRef(LiteClient.pruneExceptBlockInfo(Cell.fromBoc(Buffer.from(block.data))[0]))
             .endCell();
 
-        const message = Buffer.concat([
-            // magic prefix of message signing
-            Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
-            Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
-            Buffer.from(blockHeader.id.fileHash),
-        ]);
+        // const message = Buffer.concat([
+        //     // magic prefix of message signing
+        //     Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
+        //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
+        //     Buffer.from(blockHeader.id.fileHash),
+        // ]);
         // LiteClient.testBlockData(blockDataCell, signatures, message);
 
         const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
@@ -625,6 +878,11 @@ export class LiteClient implements Contract {
 
     async getSeqno(provider: ContractProvider) {
         const res = await provider.get('get_seqno', []);
+        return res.stack.readNumber();
+    }
+
+    async getWorkchain(provider: ContractProvider) {
+        const res = await provider.get('get_workchain', []);
         return res.stack.readNumber();
     }
 }
