@@ -129,7 +129,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            toNano('5'),
+            toNano('0.05'),
         );
         expect(result.transactions).toHaveTransaction({
             from: transactionChecker.address,
@@ -161,7 +161,7 @@ describe('TransactionChecker', () => {
             block,
             signatures,
             blocksWorkchain,
-            toNano('1.5'),
+            toNano('0.05'),
         );
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
@@ -185,7 +185,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            toNano('4.5'),
+            toNano('0.05'),
         );
         expect(result2.transactions).toHaveTransaction({
             from: transactionChecker.address,
@@ -229,7 +229,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            toNano('5'),
+            toNano('0.05'),
         );
         expect(result.transactions).toHaveTransaction({
             from: deployer.address,
@@ -273,7 +273,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            toNano('5'),
+            toNano('0.05'),
         );
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
@@ -317,7 +317,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            toNano('5'),
+            toNano('0.05'),
         );
 
         expect(result.transactions).toHaveTransaction({

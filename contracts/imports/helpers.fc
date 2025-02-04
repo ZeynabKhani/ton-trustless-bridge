@@ -10,9 +10,5 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
     throw_unless(0xf001, is_exotic == -1);
     throw_unless(0xf002, slice_bits(merkle_proof_cs) == 280);
     throw_unless(0xf003, merkle_proof_cs~load_uint(8) == 3);
-
-    ;; int root_hash = hash_at_level(merkle_proof_cs~load_ref(), 0);
-    ;; throw_unless(0xf004, root_hash == merkle_proof_cs~load_uint(256));
-    ;; return root_hash;
     return merkle_proof_cs;
 }

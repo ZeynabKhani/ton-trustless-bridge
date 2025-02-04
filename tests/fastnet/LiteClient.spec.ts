@@ -93,7 +93,7 @@ describe('LiteClient', () => {
             block,
             signatures,
             blocksWorkchain,
-            toNano('5'),
+            toNano('1.5'),
         );
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
@@ -120,7 +120,13 @@ describe('LiteClient', () => {
         };
         signatures = blockData.signatures;
 
-        let result = await liteClient.sendCheckBlock(deployer.getSender(), blockHeader, block, signatures, toNano('5'));
+        let result = await liteClient.sendCheckBlock(
+            deployer.getSender(),
+            blockHeader,
+            block,
+            signatures,
+            toNano('1.5'),
+        );
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
             to: deployer.address,

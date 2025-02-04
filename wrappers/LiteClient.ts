@@ -10,10 +10,8 @@ import {
     Sender,
     SendMode,
     Slice,
-    toNano,
     Builder,
 } from '@ton/core';
-import crypto from 'crypto';
 import { Op } from './Constants';
 import { liteServer_BlockData } from 'ton-lite-client/dist/schema';
 import { liteServer_blockHeader } from 'ton-lite-client/dist/schema';
@@ -176,12 +174,10 @@ export class LiteClient implements Contract {
 
             if (type === 0x11) {
                 curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-                // console.log(type, utime_since, utime_until, total, main, list);
             } else if (type === 0x12) {
                 // type = 'ext';
                 const total_weight = configParam34.loadUintBig(64);
                 curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-                // console.log(type, utime_since, utime_until, total, main, total_weight, list);
             }
 
             // loading previous validator set
@@ -233,8 +229,6 @@ export class LiteClient implements Contract {
             let utime_since: number = 0;
             let utime_until: number = 0;
             let configParamsCell = McBlockExtra.loadDict(Dictionary.Keys.Uint(32), Dictionary.Values.Cell());
-            // McBlockExtra.loadBits(75); // not sure what this is
-            // McBlockExtra.loadBits(256); // config_address
 
             // loading current validator set
             let configParam34 = configParamsCell.get(34)!.beginParse();
@@ -247,12 +241,10 @@ export class LiteClient implements Contract {
             if (main! < 1) throw Error('data.main < 1');
             if (type === 0x11) {
                 curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-                // console.log(type, utime_since, utime_until, total, main, list);
             } else if (type === 0x12) {
                 // type = 'ext';
                 const total_weight = configParam34.loadUintBig(64);
                 curValidatorSet = configParam34.loadDict(Dictionary.Keys.Uint(16), ValidatorDescrValue());
-                // console.log(type, utime_since, utime_until, total, main, total_weight, list);
             }
 
             // loading previous validator set
@@ -303,7 +295,6 @@ export class LiteClient implements Contract {
         info.loadUintBig(32 + 8 + 8 + 32 + 32);
         info.loadUintBig(2 + 6 + 32 + 64);
         const gen_utime = info.loadUint(32);
-        // console.log('gen_utime', gen_utime);
         data.loadRef();
         data.loadRef();
         const extra = data.loadRef().beginParse();
@@ -349,161 +340,6 @@ export class LiteClient implements Contract {
         };
     }
 
-    // todo: remove this
-    static async testBlockData(
-        blockDataCell: Cell,
-        signatures: ValidatorSignature[],
-        message: Buffer,
-        workchain: number,
-    ) {
-        // const message = Buffer.concat([
-        //     // magic prefix of message signing
-        //     Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
-        //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
-        //     Buffer.from(blockHeader.id.fileHash),
-        // ]);
-        const testBlockDataCell = blockDataCell.beginParse();
-        testBlockDataCell.loadInt(32);
-        testBlockDataCell.loadRef();
-        const data = testBlockDataCell.loadRef().beginParse();
-        data.loadUint(32);
-        data.loadInt(32); // global_id
-        const info = data.loadRef().beginParse();
-        info.loadUint(32);
-        info.loadUintBig(32 + 8 + 8 + 32 + 32);
-        info.loadUintBig(2 + 6 + 32 + 64);
-        const gen_utime = info.loadUint(32);
-        // console.log('gen_utime', gen_utime);
-        data.loadRef(); // value_flow
-        data.loadRef(); // state_update
-        const extra = data.loadRef().beginParse();
-        extra.loadUint(32);
-        extra.loadRef(); // in_msg_descr
-        extra.loadRef(); // out_msg_descr
-        extra.loadRef(); // account_blocks
-        extra.loadUintBig(256); // rand seed
-        extra.loadUintBig(256); // created_by
-        const McBlockExtra = extra.loadRef().beginParse(); // or custom
-        McBlockExtra.loadUint(16); // magic cca5
-        const key_block = McBlockExtra.loadBit();
-
-        let curValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
-            Dictionary.Keys.Uint(16),
-            ValidatorDescrValue(),
-        );
-        let prevValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
-            Dictionary.Keys.Uint(16),
-            ValidatorDescrValue(),
-        );
-        let nextValidatorSet: Dictionary<number, ValidatorDescr> = Dictionary.empty(
-            Dictionary.Keys.Uint(16),
-            ValidatorDescrValue(),
-        );
-        let utime_since: number = 0;
-        let utime_until: number = 0;
-        if (key_block) {
-            const validatorSet = LiteClient.getValidatorSet(McBlockExtra, workchain);
-            curValidatorSet = validatorSet.curValidatorSet;
-            prevValidatorSet = validatorSet.prevValidatorSet;
-            nextValidatorSet = validatorSet.nextValidatorSet;
-            utime_since = validatorSet.utime_since;
-            utime_until = validatorSet.utime_until;
-        }
-
-        let validatorSet = curValidatorSet;
-        if (key_block) {
-            let sumLargestTotalWeights = 0;
-            for (const [_, validator] of validatorSet!) {
-                sumLargestTotalWeights += Number(validator.weight);
-            }
-
-            let friendlyValidators: UserFriendlyValidator[] = [];
-            for (const entry of validatorSet!) {
-                // magic number prefix for a node id of a validator
-                const nodeIdPrefix = Buffer.from([0xc6, 0xb4, 0x13, 0x48]);
-                const pubkey = entry[1].public_key.pubkey;
-                // Convert BigInt pubkey to hex string, pad to 64 chars, then convert to Buffer
-                const pubkeyBuffer = Buffer.from(pubkey.toString(16).padStart(64, '0'), 'hex');
-                // Now concatenate the buffers
-                const nodeId = await sha256(Buffer.concat([nodeIdPrefix, pubkeyBuffer]));
-                friendlyValidators.push({
-                    ...entry[1],
-                    node_id: nodeId.toString('base64'),
-                    weight: entry[1].weight,
-                    pubkey,
-                });
-            }
-
-            let totalWeight = 0;
-            for (const item of signatures) {
-                for (const validator of friendlyValidators) {
-                    if (validator.node_id === item.node_id_short) {
-                        const key = pubkeyHexToEd25519DER(BigInt(validator.pubkey).toString(16).padStart(64, '0'));
-                        const verifyKey = crypto.createPublicKey({
-                            format: 'der',
-                            type: 'spki',
-                            key,
-                        });
-                        const result = crypto.verify(null, message, verifyKey, Buffer.from(item.signature, 'base64'));
-                        assert(result === true);
-                        totalWeight += Number(validator.weight);
-                    }
-                }
-            }
-            assert(totalWeight > 0);
-            assert(totalWeight * 3 > sumLargestTotalWeights * 2);
-            console.log('Masterchain block is verified successfully!');
-        }
-    }
-
-    // todo: remove this
-    static testLevel() {
-        const A = beginCell().storeUint(0, 256).storeUint(100, 256).endCell();
-        const B = beginCell().storeRef(A).endCell();
-        const C = beginCell().endCell();
-        const E = beginCell().endCell();
-        const D = beginCell().storeRef(C).storeRef(B).storeRef(E).endCell();
-
-        console.log(A.hash(0).toString('hex'));
-
-        const prunnedC = new Cell({
-            exotic: true,
-            bits: beginCell()
-                .storeUint(1, 8) // type
-                .storeUint(1, 8) // level mask
-                .storeBuffer(C.hash(0)) // hash
-                .storeUint(C.depth(0), 16) // depth
-                .endCell().bits,
-            refs: [],
-        });
-
-        const prunnedE = new Cell({
-            exotic: true,
-            bits: beginCell()
-                .storeUint(1, 8) // type
-                .storeUint(1, 8) // level mask
-                .storeBuffer(E.hash(0)) // hash
-                .storeUint(E.depth(0), 16) // depth
-                .endCell().bits,
-            refs: [],
-        });
-
-        const merkleProofRef = beginCell().storeRef(prunnedC).storeRef(B).storeRef(prunnedE).endCell();
-
-        const merkleProofD = new Cell({
-            exotic: true,
-            bits: beginCell()
-                .storeUint(3, 8) // type
-                .storeBuffer(D.hash(0)) // hash
-                .storeUint(D.depth(0), 16) // depth
-                .endCell().bits,
-            refs: [merkleProofRef],
-        });
-
-        console.log(merkleProofD.refs[0].hash(0).toString('hex'));
-        console.log(D.hash(0).toString('hex'));
-    }
-
     static newKeyBlockMessage(
         blockHeader: liteServer_blockHeader,
         block: liteServer_BlockData,
@@ -511,28 +347,16 @@ export class LiteClient implements Contract {
         workchain: number,
     ) {
         const blockHeaderIdCell = beginCell()
-            // .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
             .storeInt(blockHeader.id.workchain, 32)
-            // .storeInt(BigInt(blockHeader.id.shard), 64)
             .storeInt(blockHeader.id.seqno, 32)
             .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.rootHash).toString('hex')), 256)
             .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.fileHash).toString('hex')), 256)
             .endCell();
         const blockHeaderCell = beginCell()
-            // .storeInt(0x752d8219, 32) // kind: liteServer.blockHeader
             .storeRef(blockHeaderIdCell) // id
-            // .storeUint(blockHeader.mode, 32) // mode
             .storeRef(Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0]) // header_proof
             .endCell();
 
-        // const blockDataIdCell = beginCell()
-        //     // .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
-        //     .storeInt(block.id.workchain, 32)
-        //     // .storeInt(BigInt(block.id.shard), 64)
-        //     .storeInt(block.id.seqno, 32)
-        //     .storeUint(BigInt('0x' + Buffer.from(block.id.rootHash).toString('hex')), 256)
-        //     .storeUint(BigInt('0x' + Buffer.from(block.id.fileHash).toString('hex')), 256)
-        //     .endCell();
         const blockDataCell = beginCell()
             // .storeInt(0x6377cf0d, 32) // liteServer.getBlock
             // .storeRef(beginCell().endCell())
@@ -540,21 +364,6 @@ export class LiteClient implements Contract {
                 pruneExceptBlockInfoAndMcBlockExtraConfigParams(Cell.fromBoc(Buffer.from(block.data))[0], workchain),
             )
             .endCell();
-
-        // console.log(
-        //     LiteClient.pruneExceptBlockInfoAndMcBlockExtraConfigParams(
-        //         Cell.fromBoc(Buffer.from(block.data))[0],
-        //     ).refs[0].hash(0),
-        // );
-        // console.log(Cell.fromBoc(Buffer.from(block.data))[0].hash(0));
-
-        // const message = Buffer.concat([
-        //     // magic prefix of message signing
-        //     Buffer.from([0x70, 0x6e, 0x0b, 0xc5]),
-        //     Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0].refs[0].hash(0),
-        //     Buffer.from(blockHeader.id.fileHash),
-        // ]);
-        // LiteClient.testBlockData(blockDataCell, signatures, message, workchain);
 
         const blockCell = beginCell().storeRef(blockHeaderCell).storeRef(blockDataCell).endCell();
         let signaturesCell = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());

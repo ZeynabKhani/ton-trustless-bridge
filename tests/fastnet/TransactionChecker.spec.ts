@@ -129,7 +129,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            toNano('5'),
+            toNano('2'),
         );
         expect(result.transactions).toHaveTransaction({
             from: transactionChecker.address,
@@ -193,6 +193,9 @@ describe('TransactionChecker', () => {
             op: Op.transaction_checked,
             success: true,
         });
+        result.transactions.forEach((tx) => {
+            console.log(tx.totalFees);
+        });
     });
 
     it('should fail because transaction data is not correct', async () => {
@@ -229,7 +232,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            toNano('5'),
+            toNano('1.5'),
         );
         expect(result.transactions).toHaveTransaction({
             from: deployer.address,
@@ -273,7 +276,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            toNano('5'),
+            toNano('1.5'),
         );
         expect(result.transactions).toHaveTransaction({
             from: liteClient.address,
@@ -317,7 +320,7 @@ describe('TransactionChecker', () => {
             blockHeader,
             block,
             signatures,
-            toNano('5'),
+            toNano('1.5'),
         );
 
         expect(result.transactions).toHaveTransaction({

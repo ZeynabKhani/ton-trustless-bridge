@@ -4,7 +4,7 @@
 (slice, cell, int) load_data() inline_ref {
     slice ds = get_data().begin_parse();
     return (
-        ds~load_msg_addr(), ;;lite client address
+        ds~load_msg_addr(), ;; lite client address
         ds~load_dict(), ;; check transaction requests, store pending transactions that are sent to lite client
         ds~load_uint(256) ;; queries counter
     );
@@ -20,36 +20,16 @@
     );
 }
 
-;; compute root hash for the block cell
-(int) compute_root_hash(cell block) impure inline {
-    slice block_cs = block.begin_parse();
-    slice block_header_cs = block_cs~load_ref().begin_parse();
-
-    block_header_cs~skip_bits(32); ;; skip header kind
-    slice block_header_id_cs = block_header_cs~load_ref().begin_parse(); ;; skip header id cs
-
-    block_header_id_cs~skip_bits(32); ;; skip kind
-    block_header_id_cs~skip_bits(32); ;; skip workchin
-    block_header_id_cs~skip_bits(64); ;; skip shard
-    block_header_id_cs~skip_bits(32); ;; skip seqno
-    int block_header_id_root_hash = block_header_id_cs~load_uint(256);
-    return block_header_id_root_hash;
-}
-
 (int, cell) verify_transaction_proof(cell proof) impure inline {
-    ;; (slice proof_slice, int is_exotic) = parse_exotic(proof);
-    ;; throw_unless(error::not_exotic, is_exotic == -1);
     slice merkle_proof = verify_and_parse_merkle_proof_cell(proof);
     cell first_proof_ref = merkle_proof~load_ref();
     int proof_root_hash = hash_at_level(first_proof_ref, 0);
-
-    ;; proof_slice~skip_bits(8); ;;skip cell type
     throw_unless(error::inconsistent_proof, proof_root_hash == merkle_proof~load_uint(256));
     ~strdump("transaction proof root hash is ok");
     return (proof_root_hash, first_proof_ref);
 }
 
-(slice) load_account_block_cell(cell first_proof_ref) impure inline {
+(slice) load_account_block_cell(cell first_proof_ref) inline {
     ;; extracting block extra
     slice first_proof_ref_cs = first_proof_ref.begin_parse();
     first_proof_ref_cs~load_ref(); ;; skip ref 0
@@ -70,7 +50,7 @@
 }
 
 ;; verify that tx hash exists in the account blocks' transactions list
-(int) verify_tx_hash(cell transaction, slice account_block_cs) impure inline {
+(int) verify_tx_hash(cell transaction, slice account_block_cs) inline {
     ;; compute tx hash
     int tx_hash = hash_at_level(transaction, 0);
     ;; check existence of tx hash in proof

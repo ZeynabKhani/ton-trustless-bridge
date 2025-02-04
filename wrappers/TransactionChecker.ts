@@ -5,17 +5,11 @@ import {
     Contract,
     contractAddress,
     ContractProvider,
-    Dictionary,
-    DictionaryKey,
-    DictionaryKeyTypes,
-    DictionaryValue,
     Sender,
     SendMode,
-    Slice,
     toNano,
 } from '@ton/core';
 import { Op } from './Constants';
-import { LiteClient } from 'ton-lite-client';
 import { liteServer_BlockData, liteServer_blockHeader } from 'ton-lite-client/dist/schema';
 import { ValidatorSignature } from '@oraichain/tonbridge-utils';
 import { createBlockHeaderCell, createSignatureCell, pruneExceptBlockInfo } from './Helpers';
@@ -63,7 +57,7 @@ export class TransactionChecker implements Contract {
             .storeUint(BigInt('0x' + Buffer.from(txWithProof.id.fileHash).toString('hex')), 256)
             .endCell();
         const txProofCell = beginCell()
-            .storeInt(0xedeed47, 32) // kind: liteServer.transactionInfo TODO
+            .storeInt(0xedeed47, 32) // kind: liteServer.transactionInfo
             .storeRef(txProofIdCell) // id
             .storeRef(Cell.fromBoc(Buffer.from(txWithProof.proof))[0]) // proof
             .storeRef(beginCell().endCell()) // transaction
@@ -74,18 +68,8 @@ export class TransactionChecker implements Contract {
 
     static createBlockCell(blockHeader: liteServer_blockHeader, block: liteServer_BlockData) {
         const blockHeaderCell = createBlockHeaderCell(blockHeader);
-
-        // const blockDataIdCell = beginCell()
-        //     .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
-        //     .storeInt(block.id.workchain, 32)
-        //     .storeInt(BigInt(block.id.shard), 64)
-        //     .storeInt(block.id.seqno, 32)
-        //     .storeUint(BigInt('0x' + Buffer.from(block.id.rootHash).toString('hex')), 256)
-        //     .storeUint(BigInt('0x' + Buffer.from(block.id.fileHash).toString('hex')), 256)
-        //     .endCell();
         const blockDataCell = beginCell()
-            // .storeInt(0x6377cf0d, 32) // liteServer.getBlock
-            // .storeRef(beginCell().endCell())
+            .storeRef(pruneExceptBlockInfo(Cell.fromBoc(Buffer.from(block.data))[0]))
             .storeRef(pruneExceptBlockInfo(Cell.fromBoc(Buffer.from(block.data))[0]))
             .endCell();
 

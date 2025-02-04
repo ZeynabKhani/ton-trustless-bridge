@@ -19,8 +19,6 @@ export function createPrunedBranch(cell: Cell): Cell {
 }
 
 export function pruneExceptBlockInfo(blockData: Cell): Cell {
-    // We keep the first 64 bits (magic + global_id) and the info cell reference
-    // but prune value_flow and state_update and extra
     const c = blockData;
     const cs = c.beginParse();
     const magic = cs.loadUint(32);
@@ -57,8 +55,6 @@ export function pruneExceptBlockInfo(blockData: Cell): Cell {
 }
 
 export function pruneExceptBlockInfoAndMcBlockExtraConfigParams(blockData: Cell, workchain: number): Cell {
-    // We keep the first 64 bits (magic + global_id) and the info cell reference
-    // but prune value_flow and state_update and extra
     const c = blockData;
     const cs = c.beginParse();
     const magic = cs.loadUint(32);
@@ -143,11 +139,7 @@ export function pruneExceptBlockInfoAndMcBlockExtraConfigParams(blockData: Cell,
         });
         return dataProofCell;
     } else if (workchain == -1) {
-        // const shardHashes = mcBlockExtraSlice.loadRef();
-        // const shardFees = mcBlockExtraSlice.loadRef();
         const additionalData = mcBlockExtraSlice.loadRef();
-        // const prunedShardHashes = LiteClient.createPrunedBranch(shardHashes);
-        // const prunedShardFees = LiteClient.createPrunedBranch(shardFees);
         const prunedAdditionalData = createPrunedBranch(additionalData);
         const remainingBits = mcBlockExtraSlice.remainingBits;
         const remainingBits1 = mcBlockExtraSlice.loadUintBig(remainingBits - 256);
@@ -157,8 +149,6 @@ export function pruneExceptBlockInfoAndMcBlockExtraConfigParams(blockData: Cell,
         const mcBlockExtraRef = beginCell()
             .storeUint(mcBlockExtraMagic, 16)
             .storeUint(isKeyBlock, 1)
-            // .storeRef(prunedShardHashes)
-            // .storeRef(prunedShardFees)
             .storeUint(remainingBits1, remainingBits - 256)
             .storeUint(remainingBits2, 256)
             .storeRef(prunedAdditionalData)
@@ -203,17 +193,13 @@ export function pruneExceptBlockInfoAndMcBlockExtraConfigParams(blockData: Cell,
 
 export function createBlockHeaderCell(blockHeader: liteServer_blockHeader): Cell {
     const blockHeaderIdCell = beginCell()
-        // .storeInt(0x6752eb78, 32) // tonNode.blockIdExt
         .storeInt(blockHeader.id.workchain, 32)
-        // .storeInt(BigInt(blockHeader.id.shard), 64)
         .storeInt(blockHeader.id.seqno, 32)
         .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.rootHash).toString('hex')), 256)
         .storeUint(BigInt('0x' + Buffer.from(blockHeader.id.fileHash).toString('hex')), 256)
         .endCell();
     const blockHeaderCell = beginCell()
-        // .storeInt(0x752d8219, 32) // kind: liteServer.blockHeader
         .storeRef(blockHeaderIdCell) // id
-        // .storeUint(blockHeader.mode, 32) // mode
         .storeRef(Cell.fromBoc(Buffer.from(blockHeader.headerProof))[0]) // header_proof
         .endCell();
     return blockHeaderCell;
