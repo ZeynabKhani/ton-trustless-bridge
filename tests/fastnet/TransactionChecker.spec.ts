@@ -39,8 +39,8 @@ describe('TransactionChecker', () => {
         let initialData = JSON.parse(initialDataRaw);
 
         initialBlock = {
-            kind: initialData.block.kind,
-            id: initialData.block.id,
+            kind: initialData.header.kind,
+            id: initialData.header.id,
             data: initialData.block.data,
         };
 
@@ -53,8 +53,8 @@ describe('TransactionChecker', () => {
                     prev_validator_set: prevValidatorSet,
                     cur_validator_set: curValidatorSet,
                     next_validator_set: nextValidatorSet,
-                    utime_since,
-                    utime_until,
+                    utime_since: utime_since,
+                    utime_until: utime_until,
                     seqno: initialBlock.id.seqno,
                     blocks_workchain: blocksWorkchain,
                 },
@@ -192,9 +192,6 @@ describe('TransactionChecker', () => {
             to: deployer.address,
             op: Op.transaction_checked,
             success: true,
-        });
-        result.transactions.forEach((tx) => {
-            console.log(tx.totalFees);
         });
     });
 

@@ -28,7 +28,7 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
 }
 
 (async () => {
-    const jsonData = fs.readFileSync('scripts/testnet/testnet-global-config.json', 'utf8');
+    const jsonData = fs.readFileSync('scripts/testnet/liteServer/testnet-global-config.json', 'utf8');
     const data = JSON.parse(jsonData);
 
     // const { liteservers } = await fetch('https://ton.org/global-config.json').then((data) => data.json());
@@ -72,17 +72,6 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
     }));
 
     for (let tx of txs) {
-        const raw = tx.tx.raw.beginParse();
-        // const g = raw.loadRef().beginParse();
-        // console.log(raw.loadUint(32));
-        console.log(raw.loadUintBig(4));
-        console.log(raw.loadUintBig(256));
-        console.log(raw.loadUintBig(64));
-        console.log(raw.loadUintBig(256));
-        console.log(raw.loadUintBig(64));
-        console.log('now:', raw.loadUintBig(32));
-
-        console.log();
         const hashFromData = tx.tx.raw.hash().toString('hex');
         const wantedTxHash = tx.tx.hash().toString('hex');
         assert(hashFromData === wantedTxHash);

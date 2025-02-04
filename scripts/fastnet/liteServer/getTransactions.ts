@@ -27,7 +27,7 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
 }
 
 (async () => {
-    const jsonData = fs.readFileSync(require.resolve('./fastnet-global-config.json'), 'utf8');
+    const jsonData = fs.readFileSync('scripts/fastnet/liteServer/fastnet-global-config.json', 'utf8');
     const data = JSON.parse(jsonData);
 
     // const { liteservers } = await fetch('https://ton.org/global-config.json').then((data) => data.json());
@@ -46,7 +46,7 @@ export async function parseBlock(block: liteServer_BlockData): Promise<ParsedBlo
     const client = new LiteClient({ engine });
 
     // Find an account transaction in a key block
-    const initialDataRaw = fs.readFileSync(require.resolve('../../tests/fastnet/keyblock2.json'), 'utf8');
+    const initialDataRaw = fs.readFileSync('tests/fastnet/keyblock2.json', 'utf8');
     let initialData = JSON.parse(initialDataRaw);
     let blockInfo: BlockID = initialData.header.id;
     blockInfo.rootHash = Buffer.from(blockInfo.rootHash);
