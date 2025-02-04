@@ -39,15 +39,14 @@ This repository implements a trustless bridge that enables smart contracts on th
   - check_transaction (unsuccessful check of block):
   - check_transaction (unsuccessful check of transaction proof):
 
-## Scripts
-Scripts for submitting key blocks on Ton Fastnet and Ton Testnet, keeping them in sync, and checking the existence of an arbitrary transaction are in the following repository: [scripts](https://github.com/TeleportDAO/ton-bridge-syncer)
-
 ## Project structure
 
 - `contracts` - source code of all the smart contracts of the project and their dependencies.
 - `wrappers` - wrapper classes (implementing `Contract` from ton-core) for the contracts, including any [de]serialization primitives and compilation functions.
 - `tests` - tests for the contracts.
-- `scripts` - scripts used by the project, mainly the deployment scripts.
+- `scripts` - scripts used by the project, for deployment, generating data for unit tests, and interacting with contracts.
+  
+**A complete and fully functional version of the scripts for interacting with the smart contracts, including submitting key blocks, maintaining synchronization between blockchains, and verifying arbitrary transactions, can be found in the [ton-bridge-syncer](https://github.com/TeleportDAO/ton-bridge-syncer)** 
 
 ## How to use
 
