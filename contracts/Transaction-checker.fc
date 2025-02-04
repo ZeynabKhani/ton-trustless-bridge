@@ -230,7 +230,7 @@
     throw(error::unknown_opcode);
 }
 
-(slice) get_key(int key) method_id {
+(slice) get_request(int key) method_id {
     (slice lite_client, cell check_transaction_requests, int queries_cnt) = load_data();
     (slice payload, int success) = check_transaction_requests.udict_get?(64, key);
     return payload;

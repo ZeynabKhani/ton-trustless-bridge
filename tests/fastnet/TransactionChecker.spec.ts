@@ -327,7 +327,7 @@ describe('TransactionChecker', () => {
             success: true,
         });
 
-        expect((await transactionChecker.getKey(0n)).toString()).toBe('0');
+        expect((await transactionChecker.getRequest(0n)).toString()).toBe('0');
     });
 
     it('only lite client can call correct opcode', async () => {

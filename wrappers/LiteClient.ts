@@ -644,8 +644,8 @@ export class LiteClient implements Contract {
         return res.stack.readNumber();
     }
 
-    async getWorkchain(provider: ContractProvider) {
-        const res = await provider.get('get_workchain', []);
+    async getBlocksWorkchain(provider: ContractProvider) {
+        const res = await provider.get('get_blocks_workchain', []);
         return res.stack.readNumber();
     }
 
@@ -662,5 +662,18 @@ export class LiteClient implements Contract {
     async getNextValidatorSet(provider: ContractProvider) {
         const res = await provider.get('get_next_validator_set', []);
         return res.stack.readCell();
+    }
+
+    async getAllData(provider: ContractProvider) {
+        const res = await provider.get('get_all_data', []);
+        return {
+            prevValidatorSet: res.stack.readCell(),
+            curValidatorSet: res.stack.readCell(),
+            nextValidatorSet: res.stack.readCell(),
+            utimeSince: res.stack.readNumber(),
+            utimeUntil: res.stack.readNumber(),
+            seqno: res.stack.readNumber(),
+            blocksWorkchain: res.stack.readNumber(),
+        };
     }
 }

@@ -417,36 +417,41 @@
 }
 
 (cell) get_prev_validator_set() method_id {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    (cell prev_validator_set, _, _, _, _, _, _) = load_data();
     return prev_validator_set;
 }
 
 (cell) get_cur_validator_set() method_id {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    (_, cell cur_validator_set, _, _, _, _, _) = load_data();
     return cur_validator_set;
 }
 
 (cell) get_next_validator_set() method_id {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    (_, _, cell next_validator_set, _, _, _, _) = load_data();
     return next_validator_set;
 }
 
 (int) get_utime_since() method_id {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    (_, _, _, int utime_since, _, _, _) = load_data();
     return utime_since;
 }
 
 (int) get_utime_until() method_id {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    (_, _, _, _, int utime_until, _, _) = load_data();
     return utime_until;
 }
 
 (int) get_seqno() method_id {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    (_, _, _, _, _, int seqno, _) = load_data();
     return seqno;
 }
 
 (int) get_blocks_workchain() method_id {
-    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    (_, _, _, _, _, _, int blocks_workchain) = load_data();
     return blocks_workchain;
+}
+
+(cell, cell, cell, int, int, int, int) get_all_data() method_id {
+    (cell prev_validator_set, cell cur_validator_set, cell next_validator_set, int utime_since, int utime_until, int seqno, int blocks_workchain) = load_data();
+    return (prev_validator_set, cur_validator_set, next_validator_set, utime_since, utime_until, seqno, blocks_workchain);
 }

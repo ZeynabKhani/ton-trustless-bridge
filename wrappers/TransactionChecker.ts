@@ -156,8 +156,8 @@ export class TransactionChecker implements Contract {
         });
     }
 
-    async getKey(provider: ContractProvider, key: bigint) {
-        const res = await provider.get('get_key', [{ type: 'int', value: key }]);
+    async getRequest(provider: ContractProvider, key: bigint) {
+        const res = await provider.get('get_request', [{ type: 'int', value: key }]);
         let address;
         try {
             address = res.stack.readAddress();

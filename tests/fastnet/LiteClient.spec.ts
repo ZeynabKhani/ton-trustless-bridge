@@ -318,4 +318,24 @@ describe('LiteClient', () => {
             op: Op.correct,
         });
     });
+
+    it('should call getters', async () => {
+        const data = await liteClient.getAllData();
+
+        expect(data.prevValidatorSet).toBeDefined();
+        expect(data.curValidatorSet).toBeDefined();
+        expect(data.nextValidatorSet).toBeDefined();
+        expect(data.utimeSince).toEqual(data.utimeSince);
+        expect(data.utimeUntil).toEqual(data.utimeUntil);
+        expect(data.seqno).toEqual(data.seqno);
+        expect(data.blocksWorkchain).toEqual(data.blocksWorkchain);
+
+        expect(await liteClient.getPrevValidatorSet()).toBeDefined();
+        expect(await liteClient.getCurValidatorSet()).toBeDefined();
+        expect(await liteClient.getNextValidatorSet()).toBeDefined();
+        expect(await liteClient.getUtimeSince()).toEqual(data.utimeSince);
+        expect(await liteClient.getUtimeUntil()).toEqual(data.utimeUntil);
+        expect(await liteClient.getSeqno()).toEqual(data.seqno);
+        expect(await liteClient.getBlocksWorkchain()).toEqual(data.blocksWorkchain);
+    });
 });
