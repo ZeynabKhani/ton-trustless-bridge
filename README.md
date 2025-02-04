@@ -34,6 +34,7 @@ The implementation details are based on the specifications outlined in the [Ton 
   - new_key_block (successful): 75a76b61799c4ead031222af36254bbe00ed5a3257e7a94d5d818e0c789159c8
   - new_key_block (unsuccessful): 40b934257ca0fab16b42ca724ce0d272154e5b2439d40a22ba31b34788e33dcf
   - check_block (successful): 1eb3d4b1a0520249433bc5c9c62030a1ea1c532209f55f95d573be87afabbf2d
+  - check others on the contracts
  
 - Testnet
   - new_key_block (successful): [a5fe4bfbe4e2380b5cf0f574f7c5c6af1dbda98d76d1db9b4320ccf900d4ebe4](https://testnet.tonviewer.com/transaction/a5fe4bfbe4e2380b5cf0f574f7c5c6af1dbda98d76d1db9b4320ccf900d4ebe4)
