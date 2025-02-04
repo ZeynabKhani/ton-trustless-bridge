@@ -21,10 +21,11 @@ import { ValidatorSignature } from '@oraichain/tonbridge-utils';
 
 export type transactionCheckerConfig = {
     lite_client: Address;
+    queries_cnt: bigint;
 };
 
 export function transactionCheckerConfigToCell(config: transactionCheckerConfig): Cell {
-    return beginCell().storeAddress(config.lite_client).storeDict().endCell();
+    return beginCell().storeAddress(config.lite_client).storeDict().storeUint(config.queries_cnt, 256).endCell();
 }
 
 export class TransactionChecker implements Contract {
@@ -171,6 +172,14 @@ export class TransactionChecker implements Contract {
             value: toNano('0.5'),
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell().storeUint(Op.reject, 32).storeUint(0, 64).storeRef(beginCell().endCell()).endCell(),
+        });
+    }
+
+    async sendRandomOpcode(provider: ContractProvider, via: Sender) {
+        await provider.internal(via, {
+            value: toNano('0.5'),
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell().storeUint(0x123, 32).storeUint(0, 64).endCell(),
         });
     }
 

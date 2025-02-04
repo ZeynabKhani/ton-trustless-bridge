@@ -5,6 +5,7 @@ const op::new_key_block = 0x11a78ffe;
 const op::check_block = 0x8eaa9d76;
 const op::ok = 0xff8ff4e1;
 const op::correct = 0xce02b807;
+const op::reject = 0x7f3b8c1d;
 const error::unknown_opcode = 0xffff;
 const error::unknown_param_type = 0xf100;
 const error::not_a_key_block = 0xf101;
@@ -354,48 +355,63 @@ int check_signature_for_slice(slice message, slice signature, int public_key) as
     }
 
     if (op == op::check_block) {
+
         int query_id = in_msg_body~load_uint(64);
-        cell block = in_msg_body~load_ref();
-        cell signatures = in_msg_body~load_ref();
+        try {
+            cell block = in_msg_body~load_ref();
+            cell signatures = in_msg_body~load_ref();
 
-        slice block_cs = block.begin_parse();
-        slice block_header_cs = block_cs~load_ref().begin_parse();
-        slice block_data_cs = block_cs~load_ref().begin_parse();
+            slice block_cs = block.begin_parse();
+            slice block_header_cs = block_cs~load_ref().begin_parse();
+            slice block_data_cs = block_cs~load_ref().begin_parse();
 
-        (slice block_header_id_cs, int root_hash) = verify_block_header(block_header_cs);
+            (slice block_header_id_cs, int root_hash) = verify_block_header(block_header_cs);
 
-        slice block_data = verify_block_data(block_data_cs, block_header_id_cs);
+            slice block_data = verify_block_data(block_data_cs, block_header_id_cs);
 
-        (block_data, int gen_utime) = load_block_data(block_data);
+            (block_data, int gen_utime) = load_block_data(block_data);
 
-        throw_unless(0xf022, (gen_utime >= utime_since) & (gen_utime < utime_until));
+            throw_unless(0xf022, (gen_utime >= utime_since) & (gen_utime < utime_until));
 
-        (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
-        slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
+            (int block_header_id_kind, int block_header_id_workchain, int block_header_id_shard, int block_header_id_seqno, int block_header_id_root_hash, int block_header_id_file_hash) = parse_block_id(block_header_id_cs);
+            slice message = begin_cell().store_uint(0x706e0bc5, 32).store_uint(root_hash, 256).store_uint(block_header_id_file_hash, 256).end_cell().begin_parse();
 
-        if (seqno == block_header_id_seqno) {
-            if (slice_data_empty?(next_validator_set.begin_parse())) {
-                verify_signatures(prev_validator_set, signatures, message);
+            if (seqno == block_header_id_seqno) {
+                if (slice_data_empty?(next_validator_set.begin_parse())) {
+                    verify_signatures(prev_validator_set, signatures, message);
+                } else {
+                    verify_signatures(cur_validator_set, signatures, message);
+                }
             } else {
                 verify_signatures(cur_validator_set, signatures, message);
             }
-        } else {
-            verify_signatures(cur_validator_set, signatures, message);
-        }
-        
-        var correct_msg_body = begin_cell()
-                        .store_uint(op::correct, 32)
-                        .store_uint(query_id, 64)
-                        .store_uint(root_hash, 256)
-                        .end_cell();
-        var msg = begin_cell()
-                .store_uint(0x18, 6)
-                .store_slice(sender_address)
-                .store_coins(0)
-                .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
-                .store_ref(correct_msg_body);
-        send_raw_message(msg.end_cell(), 64);
+            
+            var correct_msg_body = begin_cell()
+                            .store_uint(op::correct, 32)
+                            .store_uint(query_id, 64)
+                            .store_uint(root_hash, 256)
+                            .end_cell();
+            var msg = begin_cell()
+                    .store_uint(0x18, 6)
+                    .store_slice(sender_address)
+                    .store_coins(0)
+                    .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(correct_msg_body);
+            send_raw_message(msg.end_cell(), 64);
 
+        } catch (x, n) {
+            var reject_msg_body = begin_cell()
+                            .store_uint(op::reject, 32)
+                            .store_uint(query_id, 64)
+                            .end_cell();
+            var msg = begin_cell()
+                    .store_uint(0x18, 6)
+                    .store_slice(sender_address)
+                    .store_coins(0)
+                    .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+                    .store_ref(reject_msg_body);
+            send_raw_message(msg.end_cell(), 64);
+        }
         return ();
     }
 
