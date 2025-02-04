@@ -22,25 +22,25 @@ The implementation details are based on the specifications outlined in the [Ton 
 
 ### Deployed Contracts
 - Fastnet
-  - Lite-Client Contract: 
-  - Transaction-Checker Contract:
+  - Lite-Client Contract: Ef-b5QjRXKgR1WeZuEcTuptqgxdOYg7wJsZN9ln9XgkNTJN_
+  - Transaction-Checker Contract: Ef-MWu2Iosl1chPf_E7RGVjVNvYGiX7UWgg4rBgxaZbWQhGF
  
 - Testnet
-  - Lite-Client Contract: 
-  - Transaction-Checker Contract:
+  - Lite-Client Contract: kQCPAjpID4kOV-_CuCa929zDjUpRbHdJJtW-KqOG2hwVroTC
+  - Transaction-Checker kQC8r7yIql12FCMJRkgMvfJYw3aoFAWwFFBjvk5vB_zg0ja4
  
 ### Sample Transactions 
 - Fastnet
-  - new_key_block:
-  - check_transaction (successful):
-  - check_transaction (unsuccessful check of block):
-  - check_transaction (unsuccessful check of transaction proof):
+  - new_key_block (successful): 75a76b61799c4ead031222af36254bbe00ed5a3257e7a94d5d818e0c789159c8
+  - new_key_block (unsuccessful): 40b934257ca0fab16b42ca724ce0d272154e5b2439d40a22ba31b34788e33dcf
+  - check_block (successful): 1eb3d4b1a0520249433bc5c9c62030a1ea1c532209f55f95d573be87afabbf2d
  
 - Testnet
-  - new_key_block:
-  - check_transaction (successful):
-  - check_transaction (unsuccessful check of block):
-  - check_transaction (unsuccessful check of transaction proof):
+  - new_key_block (successful): [a5fe4bfbe4e2380b5cf0f574f7c5c6af1dbda98d76d1db9b4320ccf900d4ebe4](https://testnet.tonviewer.com/transaction/a5fe4bfbe4e2380b5cf0f574f7c5c6af1dbda98d76d1db9b4320ccf900d4ebe4)
+  - new_key_block (unsuccessful): [cfb077fa548aaa638fc356d1b88aa54e8ef62b5f7806903a6cdabb9b768ca92e](https://testnet.tonviewer.com/transaction/cfb077fa548aaa638fc356d1b88aa54e8ef62b5f7806903a6cdabb9b768ca92e)
+  - check_transaction (successful): [d505a787b51145e70f78e48b56f16afe40cd47f74130df5a38e672a2fc425c43](https://testnet.tonviewer.com/transaction/d505a787b51145e70f78e48b56f16afe40cd47f74130df5a38e672a2fc425c43)
+  - check_transaction (unsuccessful check of block): [f236713805d01109d470e231fae42e566af117271264e9824f1d3ca7563bc4eb](https://testnet.tonviewer.com/transaction/f236713805d01109d470e231fae42e566af117271264e9824f1d3ca7563bc4eb)
+  - check_transaction (unsuccessful check of transaction proof): [990322a45b854c137e41e5c6b2df8fab712240b9cb46e81e208ec04979ab1e9b](https://testnet.tonviewer.com/transaction/990322a45b854c137e41e5c6b2df8fab712240b9cb46e81e208ec04979ab1e9b)
 
 ## Project structure
 
