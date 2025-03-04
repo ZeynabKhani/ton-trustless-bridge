@@ -47,7 +47,7 @@ The implementation details are based on the specifications outlined in the [Ton 
 
 - `contracts` - source code of all the smart contracts of the project and their dependencies.
 - `wrappers` - wrapper classes (implementing `Contract` from ton-core) for the contracts, including any [de]serialization primitives and compilation functions.
-- `tests` - tests for the contracts.
+- `tests` - tests for the smart contracts.
 - `scripts` - scripts used by the project, for deployment, generating data for unit tests, and interacting with contracts.
   
 **A complete and fully functional version of the scripts for interacting with the smart contracts, including submitting key blocks, maintaining synchronization between blockchains, and verifying arbitrary transactions, can be found in the [ton-bridge-syncer](https://github.com/TeleportDAO/ton-bridge-syncer)** 
